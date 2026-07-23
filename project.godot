@@ -1,0 +1,37 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+
+config_version=5
+
+[application]
+
+config/name="WorldMaker"
+config/description="A lightweight, web-exportable 3D sandbox adventure prototype."
+run/main_scene="res://scenes/Main.tscn"
+config/features=PackedStringArray("4.3", "GL Compatibility")
+
+[autoload]
+
+InputSetup="*res://scripts/autoload/InputSetup.gd"
+GameManager="*res://scripts/autoload/GameManager.gd"
+SkinManager="*res://scripts/autoload/SkinManager.gd"
+SaveLoadManager="*res://scripts/autoload/SaveLoadManager.gd"
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
+[physics]
+
+3d/default_gravity=9.8
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+anti_aliasing/quality/msaa_3d=1
+environment/defaults/default_clear_color=Color(0.55, 0.7, 0.85, 1)
