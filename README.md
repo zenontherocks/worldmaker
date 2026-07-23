@@ -108,7 +108,69 @@ import a skin or export/import a world JSON file.
    triggers a normal browser download (see the architecture notes below for
    why).
 
-## 5. Key architectural decisions
+## 5. Deploying to your domain (Cloudflare Pages, automated)
+
+`.github/workflows/deploy.yml` rebuilds the Web export and deploys it on
+every push to `main` (and on manual trigger). It has two stages:
+
+1. **Export** — [`firebelley/godot-export`](https://github.com/firebelley/godot-export)
+   downloads a headless Godot `4.3-stable` and the matching export
+   templates directly from the [godotengine/godot GitHub releases
+   page](https://github.com/godotengine/godot/releases) (the old
+   `downloads.tuxfamily.org` mirror is no longer reliable) and runs the
+   `Web` preset defined in `export_presets.cfg`.
+2. **Deploy** — [`cloudflare/wrangler-action`](https://github.com/cloudflare/wrangler-action)
+   runs `wrangler pages deploy` against the exported folder.
+
+### One-time setup (you need to do this — I can't do it from here)
+
+1. **Create the Cloudflare Pages project.** In the Cloudflare dashboard:
+   **Workers & Pages > Create > Pages > Create project (Direct Upload)**.
+   Name it exactly the same as this GitHub repo (`worldmaker`) — the
+   workflow derives `--project-name` from the repo name automatically. You
+   can leave it empty; the first Actions run populates it.
+2. **Create a Cloudflare API token.** **My Profile > API Tokens > Create
+   Token**, using the **"Edit Cloudflare Workers"** template (it covers
+   Pages) or a custom token scoped to `Account > Cloudflare Pages > Edit`.
+3. **Add two repo secrets** in **GitHub > this repo > Settings > Secrets and
+   variables > Actions**:
+   - `CLOUDFLARE_API_TOKEN` — the token from step 2.
+   - `CLOUDFLARE_ACCOUNT_ID` — found on the right sidebar of any page in the
+     Cloudflare dashboard (or **Workers & Pages > Overview**).
+4. **Attach your domain.** In the Pages project, **Custom domains > Set up
+   a custom domain**, enter your domain, and follow Cloudflare's prompts.
+   If your domain's nameservers are already on Cloudflare this is a couple
+   of clicks; otherwise it'll walk you through a CNAME record instead.
+5. Push to `main` (or run the workflow manually from the **Actions** tab)
+   and watch the run. Once it's green, your domain serves the game.
+
+### Notes / things to double-check on the first run
+
+- I could not execute this pipeline in the sandbox this project was built
+  in (no outbound access to download a Godot binary to test with), so the
+  export step's asset filenames and the deploy step's output folder name
+  are based on the tool's documented conventions rather than a verified
+  dry run. If the **Export** step 404s, check the exact asset names for
+  your chosen `GODOT_VERSION` under [the matching GitHub
+  release](https://github.com/godotengine/godot/releases) and adjust the
+  two download URLs in the workflow. If the **Deploy** step can't find the
+  build output, check the export step's log for where it actually wrote
+  files and adjust the `Web` path segment in the `command:` line to match.
+- Multithreading is disabled in the Web export preset
+  (`variant/thread_support=false`) on purpose — enabling it requires the
+  host to send `Cross-Origin-Opener-Policy`/`Cross-Origin-Embedder-Policy`
+  headers, which not every static host (or Cloudflare Pages config) sends
+  by default. Leaving it off keeps deployment to arbitrary static hosting
+  simple, at the cost of not using multiple CPU threads — a fine trade for
+  a lightweight sandbox game.
+- Prefer a different host (plain FTP/SSH, GitHub Pages, Netlify)? The
+  **Export** stage doesn't know or care about Cloudflare — only the last
+  step does. Swap the final `Deploy to Cloudflare Pages` step for an
+  `rsync`/`scp`/`ftp-deploy-action`/`actions/deploy-pages` step pointed at
+  `${{ steps.export.outputs.build_directory }}/Web` and the rest of the
+  pipeline is unchanged.
+
+## 6. Key architectural decisions
 
 - **Data-driven shapes.** `ShapeDefinitions.gd` is the single table of which
   five shapes exist and which dimension fields each one has. `ShapeFactory.gd`
@@ -185,7 +247,7 @@ import a skin or export/import a world JSON file.
   that cross-cutting wiring visible in one small file instead of scattered
   through `@onready` reach-ins across the codebase.
 
-## 6. Extending it
+## 7. Extending it
 
 - **New shape:** add an entry to `ShapeDefinitions.DEFS`, add a `match`
   branch in `ShapeFactory.build_mesh` / `build_collision_shape` /
