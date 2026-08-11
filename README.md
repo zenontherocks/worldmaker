@@ -113,14 +113,13 @@ import a skin or export/import a world JSON file.
 `.github/workflows/deploy.yml` rebuilds the Web export and deploys it on
 every push to `main` (and on manual trigger). It has two stages:
 
-1. **Export** — [`firebelley/godot-export`](https://github.com/firebelley/godot-export)
-   downloads a headless Godot `4.3-stable` and the matching export
-   templates directly from the [godotengine/godot GitHub releases
-   page](https://github.com/godotengine/godot/releases) (the old
-   `downloads.tuxfamily.org` mirror is no longer reliable) and runs the
-   `Web` preset defined in `export_presets.cfg`.
+1. **Export** — [`chickensoft-games/setup-godot`](https://github.com/chickensoft-games/setup-godot)
+   installs a headless Godot `4.3.0` plus export templates (it resolves the
+   correct download itself instead of us hand-pinning a release asset URL),
+   then a plain `godot --headless --export-release "Web" build/index.html`
+   runs the `Web` preset defined in `export_presets.cfg`.
 2. **Deploy** — [`cloudflare/wrangler-action`](https://github.com/cloudflare/wrangler-action)
-   runs `wrangler pages deploy` against the exported folder.
+   runs `wrangler pages deploy` against the `build/` folder.
 
 ### One-time setup (you need to do this — I can't do it from here)
 
@@ -146,16 +145,16 @@ every push to `main` (and on manual trigger). It has two stages:
 
 ### Notes / things to double-check on the first run
 
-- I could not execute this pipeline in the sandbox this project was built
-  in (no outbound access to download a Godot binary to test with), so the
-  export step's asset filenames and the deploy step's output folder name
-  are based on the tool's documented conventions rather than a verified
-  dry run. If the **Export** step 404s, check the exact asset names for
-  your chosen `GODOT_VERSION` under [the matching GitHub
-  release](https://github.com/godotengine/godot/releases) and adjust the
-  two download URLs in the workflow. If the **Deploy** step can't find the
-  build output, check the export step's log for where it actually wrote
-  files and adjust the `Web` path segment in the `command:` line to match.
+- If you created the Cloudflare Pages project through **Connect to Git**
+  instead of **Direct Upload**, Cloudflare will *also* try to build the
+  repo itself on every push (using its own generic build system, which has
+  no idea what to do with a Godot project) — that's a separate failure
+  from this workflow and shows up as a "build failed" banner on the Pages
+  project page even when the GitHub Actions deploy succeeds. Fix: in the
+  Pages project's **Settings > Builds**, disable automatic Git builds (or
+  recreate the project as Direct Upload). This workflow's `wrangler pages
+  deploy` step creates deployments on its own and doesn't need Cloudflare's
+  Git integration at all.
 - Multithreading is disabled in the Web export preset
   (`variant/thread_support=false`) on purpose — enabling it requires the
   host to send `Cross-Origin-Opener-Policy`/`Cross-Origin-Embedder-Policy`
@@ -167,8 +166,7 @@ every push to `main` (and on manual trigger). It has two stages:
   **Export** stage doesn't know or care about Cloudflare — only the last
   step does. Swap the final `Deploy to Cloudflare Pages` step for an
   `rsync`/`scp`/`ftp-deploy-action`/`actions/deploy-pages` step pointed at
-  `${{ steps.export.outputs.build_directory }}/Web` and the rest of the
-  pipeline is unchanged.
+  the `build/` folder and the rest of the pipeline is unchanged.
 
 ## 6. Key architectural decisions
 
