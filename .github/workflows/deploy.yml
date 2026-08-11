@@ -1,4 +1,4 @@
-name: Export and deploy to Cloudflare Pages
+name: Export and deploy to Cloudflare Workers
 
 on:
   push:
@@ -30,9 +30,9 @@ jobs:
           mkdir -p build
           godot --headless --export-release "Web" build/index.html
 
-      - name: Deploy to Cloudflare Pages
+      - name: Deploy to Cloudflare Workers
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy build --project-name=${{ github.event.repository.name }}
+          command: deploy

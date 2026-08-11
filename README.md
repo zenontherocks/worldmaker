@@ -108,7 +108,7 @@ import a skin or export/import a world JSON file.
    triggers a normal browser download (see the architecture notes below for
    why).
 
-## 5. Deploying to your domain (Cloudflare Pages, automated)
+## 5. Deploying to your domain (Cloudflare Workers, automated)
 
 `.github/workflows/deploy.yml` rebuilds the Web export and deploys it on
 every push to `main` (and on manual trigger). It has two stages:
@@ -119,54 +119,52 @@ every push to `main` (and on manual trigger). It has two stages:
    then a plain `godot --headless --export-release "Web" build/index.html`
    runs the `Web` preset defined in `export_presets.cfg`.
 2. **Deploy** — [`cloudflare/wrangler-action`](https://github.com/cloudflare/wrangler-action)
-   runs `wrangler pages deploy` against the `build/` folder.
+   runs `wrangler deploy`, which uploads the `build/` folder as the static
+   assets for the Cloudflare Worker named in `wrangler.toml` (`worldmaker`).
+   This deploys straight into a **Worker**, using Cloudflare's [static
+   assets](https://developers.cloudflare.com/workers/static-assets/)
+   feature — not a separate Cloudflare Pages project. If you already
+   created a Worker (e.g. it has a `*.workers.dev` URL) and attached your
+   domain to it, this reuses that same Worker; nothing else to set up on
+   the domain side.
 
 ### One-time setup (you need to do this — I can't do it from here)
 
-1. **Create the Cloudflare Pages project.** In the Cloudflare dashboard:
-   **Workers & Pages > Create > Pages > Create project (Direct Upload)**.
-   Name it exactly the same as this GitHub repo (`worldmaker`) — the
-   workflow derives `--project-name` from the repo name automatically. You
-   can leave it empty; the first Actions run populates it.
+1. **Have a Cloudflare Worker named `worldmaker`.** If you don't have one
+   yet: **Workers & Pages > Create > Workers > Create Worker**, name it
+   `worldmaker`. (`wrangler.toml`'s `name` field must match exactly —
+   update both if you want a different name.)
 2. **Create a Cloudflare API token.** **My Profile > API Tokens > Create
-   Token**, using the **"Edit Cloudflare Workers"** template (it covers
-   Pages) or a custom token scoped to `Account > Cloudflare Pages > Edit`.
+   Token**, using the **"Edit Cloudflare Workers"** template, or a custom
+   token scoped to `Account > Workers Scripts > Edit`.
 3. **Add two repo secrets** in **GitHub > this repo > Settings > Secrets and
    variables > Actions**:
    - `CLOUDFLARE_API_TOKEN` — the token from step 2.
    - `CLOUDFLARE_ACCOUNT_ID` — found on the right sidebar of any page in the
-     Cloudflare dashboard (or **Workers & Pages > Overview**).
-4. **Attach your domain.** In the Pages project, **Custom domains > Set up
-   a custom domain**, enter your domain, and follow Cloudflare's prompts.
-   If your domain's nameservers are already on Cloudflare this is a couple
-   of clicks; otherwise it'll walk you through a CNAME record instead.
+     Cloudflare dashboard (or **Workers & Pages > Overview**). Double-check
+     this is the account the `worldmaker` Worker actually lives in if you
+     have access to more than one Cloudflare account — a mismatch here
+     produces a confusing "project/script not found" error even though
+     the token itself is valid.
+4. **Attach your domain**, if you haven't already: open the `worldmaker`
+   Worker, **Settings > Domains & Routes > Add > Custom Domain**, enter
+   `worldmaker.win`, and follow Cloudflare's prompts.
 5. Push to `main` (or run the workflow manually from the **Actions** tab)
-   and watch the run. Once it's green, your domain serves the game.
+   and watch the run. Once it's green, `worldmaker.win` serves the game.
 
 ### Notes / things to double-check on the first run
 
-- If you created the Cloudflare Pages project through **Connect to Git**
-  instead of **Direct Upload**, Cloudflare will *also* try to build the
-  repo itself on every push (using its own generic build system, which has
-  no idea what to do with a Godot project) — that's a separate failure
-  from this workflow and shows up as a "build failed" banner on the Pages
-  project page even when the GitHub Actions deploy succeeds. Fix: in the
-  Pages project's **Settings > Builds**, disable automatic Git builds (or
-  recreate the project as Direct Upload). This workflow's `wrangler pages
-  deploy` step creates deployments on its own and doesn't need Cloudflare's
-  Git integration at all.
 - Multithreading is disabled in the Web export preset
   (`variant/thread_support=false`) on purpose — enabling it requires the
   host to send `Cross-Origin-Opener-Policy`/`Cross-Origin-Embedder-Policy`
-  headers, which not every static host (or Cloudflare Pages config) sends
-  by default. Leaving it off keeps deployment to arbitrary static hosting
-  simple, at the cost of not using multiple CPU threads — a fine trade for
-  a lightweight sandbox game.
-- Prefer a different host (plain FTP/SSH, GitHub Pages, Netlify)? The
-  **Export** stage doesn't know or care about Cloudflare — only the last
-  step does. Swap the final `Deploy to Cloudflare Pages` step for an
-  `rsync`/`scp`/`ftp-deploy-action`/`actions/deploy-pages` step pointed at
-  the `build/` folder and the rest of the pipeline is unchanged.
+  headers, which not every static host sends by default. Leaving it off
+  keeps deployment simple, at the cost of not using multiple CPU threads —
+  a fine trade for a lightweight sandbox game.
+- Prefer a different host (Cloudflare Pages, plain FTP/SSH, GitHub Pages,
+  Netlify)? The **Export** stage doesn't know or care where the result
+  ends up — only the last step does. Swap the final `Deploy to Cloudflare
+  Workers` step for whatever your host needs, pointed at the `build/`
+  folder, and the rest of the pipeline is unchanged.
 
 ## 6. Key architectural decisions
 
