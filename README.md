@@ -108,7 +108,7 @@ import a skin or export/import a world JSON file.
    triggers a normal browser download (see the architecture notes below for
    why).
 
-## 5. Deploying to your domain (Cloudflare Workers, automated)
+## 5. Deploying to your domain (Cloudflare R2, automated)
 
 `.github/workflows/deploy.yml` rebuilds the Web export and deploys it on
 every push to `main` (and on manual trigger). It has two stages:
@@ -118,37 +118,41 @@ every push to `main` (and on manual trigger). It has two stages:
    correct download itself instead of us hand-pinning a release asset URL),
    then a plain `godot --headless --export-release "Web" build/index.html`
    runs the `Web` preset defined in `export_presets.cfg`.
-2. **Deploy** — [`cloudflare/wrangler-action`](https://github.com/cloudflare/wrangler-action)
-   runs `wrangler deploy`, which uploads the `build/` folder as the static
-   assets for the Cloudflare Worker named in `wrangler.toml` (`worldmaker`).
-   This deploys straight into a **Worker**, using Cloudflare's [static
-   assets](https://developers.cloudflare.com/workers/static-assets/)
-   feature — not a separate Cloudflare Pages project. If you already
-   created a Worker (e.g. it has a `*.workers.dev` URL) and attached your
-   domain to it, this reuses that same Worker; nothing else to set up on
-   the domain side.
+2. **Deploy** — the AWS CLI (pre-installed on GitHub's runners; R2 speaks
+   the S3 API) runs `aws s3 sync` against an R2 bucket named `worldmaker`,
+   mirroring the `build/` folder exactly (`--delete` removes anything from
+   a previous build that's no longer produced).
+
+We deploy to **R2**, not Cloudflare Pages or a Worker, because Godot's
+compiled WebAssembly engine (`index.wasm`) is ~34MB and both Pages and
+Workers cap individual static assets at 25MB — R2 has no such per-file
+limit, and is Cloudflare's own recommended fix for this exact situation.
 
 ### One-time setup (you need to do this — I can't do it from here)
 
-1. **Have a Cloudflare Worker named `worldmaker`.** If you don't have one
-   yet: **Workers & Pages > Create > Workers > Create Worker**, name it
-   `worldmaker`. (`wrangler.toml`'s `name` field must match exactly —
-   update both if you want a different name.)
-2. **Create a Cloudflare API token.** **My Profile > API Tokens > Create
-   Token**, using the **"Edit Cloudflare Workers"** template, or a custom
-   token scoped to `Account > Workers Scripts > Edit`.
-3. **Add two repo secrets** in **GitHub > this repo > Settings > Secrets and
+1. **Create an R2 bucket** named `worldmaker`: Cloudflare dashboard >
+   **R2 Object Storage > Create bucket**.
+2. **Enable public access and attach your domain.** In the bucket's
+   **Settings > Public access > Custom Domains > Connect Domain**, enter
+   `worldmaker.win`. (If your domain was previously attached to the
+   `worldmaker` Worker from an earlier setup attempt, remove it there
+   first — **Workers & Pages > worldmaker > Settings > Domains & Routes**
+   — a hostname can only be attached to one thing at a time.)
+3. **Create R2 API credentials**: dashboard > **R2 Object Storage > Manage
+   R2 API Tokens > Create API Token**. Give it **Object Read & Write**,
+   scoped to the `worldmaker` bucket if you're offered the choice. This
+   issues an **Access Key ID** and **Secret Access Key** — copy both now,
+   the secret is only shown once.
+4. **Add repo secrets** in **GitHub > this repo > Settings > Secrets and
    variables > Actions**:
-   - `CLOUDFLARE_API_TOKEN` — the token from step 2.
-   - `CLOUDFLARE_ACCOUNT_ID` — found on the right sidebar of any page in the
-     Cloudflare dashboard (or **Workers & Pages > Overview**). Double-check
-     this is the account the `worldmaker` Worker actually lives in if you
-     have access to more than one Cloudflare account — a mismatch here
-     produces a confusing "project/script not found" error even though
-     the token itself is valid.
-4. **Attach your domain**, if you haven't already: open the `worldmaker`
-   Worker, **Settings > Domains & Routes > Add > Custom Domain**, enter
-   `worldmaker.win`, and follow Cloudflare's prompts.
+   - `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` — from step 3.
+   - `CLOUDFLARE_ACCOUNT_ID` — found on the right sidebar of any page in
+     the Cloudflare dashboard. The workflow uses this to build the R2
+     endpoint URL (`https://<account-id>.r2.cloudflarestorage.com`), so it
+     must be the account the `worldmaker` bucket actually lives in.
+   - (If you added a `CLOUDFLARE_API_TOKEN` secret during an earlier setup
+     attempt, it's no longer used by this workflow — fine to leave it or
+     delete it.)
 5. Push to `main` (or run the workflow manually from the **Actions** tab)
    and watch the run. Once it's green, `worldmaker.win` serves the game.
 
@@ -157,14 +161,15 @@ every push to `main` (and on manual trigger). It has two stages:
 - Multithreading is disabled in the Web export preset
   (`variant/thread_support=false`) on purpose — enabling it requires the
   host to send `Cross-Origin-Opener-Policy`/`Cross-Origin-Embedder-Policy`
-  headers, which not every static host sends by default. Leaving it off
-  keeps deployment simple, at the cost of not using multiple CPU threads —
-  a fine trade for a lightweight sandbox game.
-- Prefer a different host (Cloudflare Pages, plain FTP/SSH, GitHub Pages,
-  Netlify)? The **Export** stage doesn't know or care where the result
-  ends up — only the last step does. Swap the final `Deploy to Cloudflare
-  Workers` step for whatever your host needs, pointed at the `build/`
-  folder, and the rest of the pipeline is unchanged.
+  headers, which R2's public-bucket serving doesn't let you configure as
+  easily as a Worker could. Leaving it off keeps deployment simple, at the
+  cost of not using multiple CPU threads — a fine trade for a lightweight
+  sandbox game.
+- Prefer a different host (plain FTP/SSH, GitHub Pages, Netlify)? The
+  **Export** stage doesn't know or care where the result ends up — only
+  the last step does. Swap the final `Sync build to Cloudflare R2` step
+  for whatever your host needs, pointed at the `build/` folder, and the
+  rest of the pipeline is unchanged.
 
 ## 6. Key architectural decisions
 

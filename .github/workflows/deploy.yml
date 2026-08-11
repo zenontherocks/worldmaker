@@ -1,4 +1,4 @@
-name: Export and deploy to Cloudflare Workers
+name: Export and deploy to Cloudflare R2
 
 on:
   push:
@@ -8,6 +8,7 @@ on:
 
 env:
   GODOT_VERSION: 4.3.0
+  R2_BUCKET: worldmaker
 
 jobs:
   build-and-deploy:
@@ -30,9 +31,15 @@ jobs:
           mkdir -p build
           godot --headless --export-release "Web" build/index.html
 
-      - name: Deploy to Cloudflare Workers
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: deploy
+      - name: Sync build to Cloudflare R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+          R2_ENDPOINT: https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com
+        run: |
+          aws s3 sync build/ "s3://${R2_BUCKET}" --endpoint-url "$R2_ENDPOINT" --delete
+          # R2/aws-cli's extension-based content-type guessing doesn't reliably
+          # know .wasm; force it so browsers can use streaming instantiation.
+          aws s3 cp build/index.wasm "s3://${R2_BUCKET}/index.wasm" \
+            --endpoint-url "$R2_ENDPOINT" --content-type application/wasm
