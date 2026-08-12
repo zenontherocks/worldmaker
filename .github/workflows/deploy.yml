@@ -43,8 +43,19 @@ jobs:
           AWS_DEFAULT_REGION: auto
           R2_ENDPOINT: https://${{ secrets.CLOUDFLARE_ACCOUNT_ID }}.r2.cloudflarestorage.com
         run: |
-          aws s3 sync build/ "s3://${R2_BUCKET}" --endpoint-url "$R2_ENDPOINT" --delete
+          # Cloudflare's edge cache sits in front of R2 and, without an
+          # explicit Cache-Control, can keep serving a stale file for hours
+          # after a deploy -- a browser hard-refresh only bypasses the
+          # browser's own cache, not that edge layer. "no-cache" still lets
+          # browsers/Cloudflare cache the (large, rarely-content-changing)
+          # engine files, but forces a revalidation request on each load, so
+          # a new deploy is always actually visible.
+          aws s3 sync build/ "s3://${R2_BUCKET}" --endpoint-url "$R2_ENDPOINT" --delete \
+            --cache-control "no-cache, must-revalidate"
           # R2/aws-cli's extension-based content-type guessing doesn't reliably
           # know .wasm; force it so browsers can use streaming instantiation.
+          # (aws s3 cp replaces metadata wholesale, so cache-control has to be
+          # repeated here too.)
           aws s3 cp build/index.wasm "s3://${R2_BUCKET}/index.wasm" \
-            --endpoint-url "$R2_ENDPOINT" --content-type application/wasm
+            --endpoint-url "$R2_ENDPOINT" --content-type application/wasm \
+            --cache-control "no-cache, must-revalidate"
