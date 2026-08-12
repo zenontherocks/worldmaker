@@ -186,3 +186,16 @@ function wm_pick_file(accept, onDone) {
 	console.log("[wm] wm_pick_file: calling input.click()");
 	input.click();
 }
+
+// Explicit assignment rather than relying on plain top-level function
+// declarations implicitly becoming window properties: GDScript reaches
+// these through JavaScriptBridge.get_interface("window").<name>(...), and
+// that property-access path has not been reliably finding them.
+window.wm_fs_supported = wm_fs_supported;
+window.wm_fs_choose_folder = wm_fs_choose_folder;
+window.wm_fs_list_images = wm_fs_list_images;
+window.wm_fs_read_image = wm_fs_read_image;
+window.wm_fs_write_text = wm_fs_write_text;
+window.wm_fs_read_text = wm_fs_read_text;
+window.wm_pick_file = wm_pick_file;
+console.log("[wm] local-data-bridge.js: explicit window assignments done");
