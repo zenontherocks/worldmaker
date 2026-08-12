@@ -28,10 +28,14 @@ function wm_fs_supported() {
 let _wmDirHandle = null;
 
 async function wm_fs_choose_folder(onDone) {
+	console.log("[wm] wm_fs_choose_folder: calling showDirectoryPicker");
 	try {
 		_wmDirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+		console.log("[wm] wm_fs_choose_folder: picker resolved, name =", _wmDirHandle.name, "calling onDone");
 		onDone(true, _wmDirHandle.name);
+		console.log("[wm] wm_fs_choose_folder: onDone call returned");
 	} catch (e) {
+		console.log("[wm] wm_fs_choose_folder: rejected/threw:", e);
 		onDone(false, String(e));
 	}
 }
@@ -145,22 +149,40 @@ function wm_pick_file(accept, onDone) {
 	}, { once: true });
 
 	input.addEventListener("change", () => {
+		console.log("[wm] wm_pick_file: change event fired, files =", input.files);
 		const file = input.files && input.files[0];
 		cleanup();
 		if (!file) {
+			console.log("[wm] wm_pick_file: no file in input.files, calling onDone(false)");
 			onDone(false, "No file selected", "");
 			return;
 		}
+		console.log("[wm] wm_pick_file: got file", file.name, file.size, "bytes, reading it");
 		if (file.name.toLowerCase().endsWith(".json")) {
 			file.text()
-				.then((text) => onDone(true, file.name, text))
-				.catch((e) => onDone(false, String(e), ""));
+				.then((text) => {
+					console.log("[wm] wm_pick_file: text() resolved, calling onDone(true)");
+					onDone(true, file.name, text);
+					console.log("[wm] wm_pick_file: onDone call returned");
+				})
+				.catch((e) => {
+					console.log("[wm] wm_pick_file: text() rejected:", e);
+					onDone(false, String(e), "");
+				});
 		} else {
 			file.arrayBuffer()
-				.then((buffer) => onDone(true, file.name, _wmBufferToBase64(buffer)))
-				.catch((e) => onDone(false, String(e), ""));
+				.then((buffer) => {
+					console.log("[wm] wm_pick_file: arrayBuffer() resolved,", buffer.byteLength, "bytes, encoding + calling onDone(true)");
+					onDone(true, file.name, _wmBufferToBase64(buffer));
+					console.log("[wm] wm_pick_file: onDone call returned");
+				})
+				.catch((e) => {
+					console.log("[wm] wm_pick_file: arrayBuffer() rejected:", e);
+					onDone(false, String(e), "");
+				});
 		}
 	}, { once: true });
 
+	console.log("[wm] wm_pick_file: calling input.click()");
 	input.click();
 }

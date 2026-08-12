@@ -39,8 +39,10 @@ func is_supported() -> bool:
 
 
 func choose_folder() -> void:
+	print("[LocalDataFolder] choose_folder: calling into JS")
 	var callback := JavaScriptBridge.create_callback(_on_folder_chosen)
 	_window.wm_fs_choose_folder(callback)
+	print("[LocalDataFolder] choose_folder: JS call returned (async result pending)")
 
 
 func request_image_list() -> void:
@@ -64,6 +66,7 @@ func load_world_text(filename: String = "world.json") -> void:
 
 
 func _on_folder_chosen(args: Array) -> void:
+	print("[LocalDataFolder] _on_folder_chosen: callback fired from JS, args = ", args)
 	var success: bool = args[0]
 	var payload: String = args[1]
 	if success:

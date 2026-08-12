@@ -29,11 +29,14 @@ func _ready() -> void:
 ## base64-encoded raw bytes (matches LocalDataFolder's image convention,
 ## decode with Marshalls.base64_to_raw()).
 func pick_file(accept: String) -> void:
+	print("[WebFilePicker] pick_file: calling into JS with accept=", accept)
 	var callback := JavaScriptBridge.create_callback(_on_file_picked)
 	_window.wm_pick_file(accept, callback)
+	print("[WebFilePicker] pick_file: JS call returned (async result pending)")
 
 
 func _on_file_picked(args: Array) -> void:
+	print("[WebFilePicker] _on_file_picked: callback fired from JS, args = ", args)
 	var success: bool = args[0]
 	var filename_or_reason: String = args[1]
 	if not success:
