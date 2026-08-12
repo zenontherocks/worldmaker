@@ -27,6 +27,12 @@ var _folder_status_label: Label
 var _pending_folder_action: String = ""
 var _pending_web_pick: String = ""
 
+## Visible feedback for the whole import/export flow. push_warning() alone
+## isn't enough here -- it's a debug-only channel that never shows up
+## anywhere in a deployed Web build, so any failure would otherwise be
+## completely silent to an actual player.
+var _status_label: Label
+
 var _skin_picker: PopupPanel
 var _skin_item_list: ItemList
 
@@ -96,6 +102,11 @@ func _ready() -> void:
 	import_world_button.pressed.connect(_on_import_world_pressed)
 	_content.add_child(import_world_button)
 
+	_status_label = Label.new()
+	_status_label.text = ""
+	_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_content.add_child(_status_label)
+
 	var hint := Label.new()
 	hint.text = "F1 toggles this panel  |  Esc releases the mouse"
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -134,6 +145,7 @@ func _ready() -> void:
 	_skin_item_list.item_selected.connect(_on_skin_item_selected)
 	picker_vbox.add_child(_skin_item_list)
 
+	SkinManager.skin_loaded.connect(_on_skin_load_succeeded)
 	SkinManager.skin_load_failed.connect(_on_skin_load_failed)
 
 	if LocalDataFolder.is_supported():
@@ -165,6 +177,13 @@ func _make_file_dialog(mode: FileDialog.FileMode, filters: PackedStringArray) ->
 
 func _recapture_mouse() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _set_status(text: String, is_error: bool = false) -> void:
+	_status_label.text = text
+	_status_label.add_theme_color_override(
+		"font_color", Color(1.0, 0.55, 0.55) if is_error else Color(0.6, 1.0, 0.65)
+	)
 
 
 func _on_collapse_pressed() -> void:
@@ -216,6 +235,7 @@ func _on_folder_choice_failed(reason: String) -> void:
 	_recapture_mouse()
 	_pending_folder_action = ""
 	push_warning("Could not choose data folder: %s" % reason)
+	_set_status("Could not choose data folder: %s" % reason, true)
 
 
 func _on_import_skin_pressed() -> void:
@@ -236,8 +256,13 @@ func _on_skin_file_selected(path: String) -> void:
 	_recapture_mouse()
 
 
+func _on_skin_load_succeeded(_texture: Texture2D, skin_key: String) -> void:
+	_set_status("Skin '%s' applied -- place a shape to use it" % skin_key)
+
+
 func _on_skin_load_failed(reason: String) -> void:
 	push_warning("Skin load failed: %s" % reason)
+	_set_status("Skin load failed: %s" % reason, true)
 
 
 func _on_image_list_ready(filenames: Array) -> void:
@@ -250,6 +275,7 @@ func _on_image_list_ready(filenames: Array) -> void:
 
 func _on_image_list_failed(reason: String) -> void:
 	push_warning("Could not list data folder images: %s" % reason)
+	_set_status("Could not list data folder images: %s" % reason, true)
 
 
 func _on_skin_item_selected(index: int) -> void:
@@ -264,6 +290,7 @@ func _on_image_bytes_ready(filename: String, bytes: PackedByteArray) -> void:
 
 func _on_image_read_failed(filename: String, reason: String) -> void:
 	push_warning("Could not read '%s' from data folder: %s" % [filename, reason])
+	_set_status("Could not read '%s': %s" % [filename, reason], true)
 
 
 func _on_export_pressed() -> void:
@@ -277,13 +304,19 @@ func _on_export_pressed() -> void:
 
 
 func _on_export_file_selected(path: String) -> void:
-	SaveLoadManager.save_to_path(path)
+	if SaveLoadManager.save_to_path(path):
+		_set_status("World saved to %s" % path.get_file())
+	else:
+		_set_status("Could not save world to %s" % path.get_file(), true)
 	_recapture_mouse()
 
 
 func _on_world_saved(success: bool, reason: String) -> void:
-	if not success:
+	if success:
+		_set_status("World saved to data folder")
+	else:
 		push_warning("Could not save world to data folder: %s" % reason)
+		_set_status("Could not save world: %s" % reason, true)
 
 
 func _on_import_world_pressed() -> void:
@@ -300,7 +333,10 @@ func _on_import_world_pressed() -> void:
 
 
 func _on_import_file_selected(path: String) -> void:
-	SaveLoadManager.load_from_path(path)
+	if SaveLoadManager.load_from_path(path):
+		_set_status("World loaded from %s" % path.get_file())
+	else:
+		_set_status("Could not load world from %s" % path.get_file(), true)
 	_recapture_mouse()
 
 
@@ -310,7 +346,10 @@ func _on_web_file_picked(filename: String, payload: String) -> void:
 	if pick == "skin":
 		SkinManager.load_skin_from_bytes(Marshalls.base64_to_raw(payload), filename)
 	elif pick == "world":
-		SaveLoadManager.load_from_json_text(payload)
+		if SaveLoadManager.load_from_json_text(payload):
+			_set_status("World loaded from %s" % filename)
+		else:
+			_set_status("Could not parse %s as a world file" % filename, true)
 	_recapture_mouse()
 
 
@@ -318,11 +357,16 @@ func _on_web_file_pick_failed(reason: String) -> void:
 	_pending_web_pick = ""
 	if reason != "canceled":
 		push_warning("File pick failed: %s" % reason)
+		_set_status("File pick failed: %s" % reason, true)
 	_recapture_mouse()
 
 
 func _on_world_loaded(success: bool, text: String) -> void:
-	if success:
-		SaveLoadManager.load_from_json_text(text)
-	else:
+	if not success:
 		push_warning("Could not load world from data folder: %s" % text)
+		_set_status("Could not load world from data folder: %s" % text, true)
+		return
+	if SaveLoadManager.load_from_json_text(text):
+		_set_status("World loaded from data folder")
+	else:
+		_set_status("Could not parse world.json from data folder", true)
