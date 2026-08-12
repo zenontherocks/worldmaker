@@ -126,7 +126,13 @@ function wm_pick_file(accept, onDone) {
 	const input = document.createElement("input");
 	input.type = "file";
 	input.accept = accept;
-	input.style.display = "none";
+	// display:none keeps some browsers (notably Firefox) from firing a
+	// native picker on .click() at all -- position off-screen instead so
+	// the element stays part of the render tree without being visible.
+	input.style.position = "fixed";
+	input.style.top = "-1000px";
+	input.style.left = "-1000px";
+	input.style.opacity = "0";
 	document.body.appendChild(input);
 
 	function cleanup() {
