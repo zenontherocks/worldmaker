@@ -1,30 +1,31 @@
 extends PanelContainer
 class_name SettingsPanelUI
 ## Collapsible corner panel for import/export: a PNG/JPG skin and world
-## builds as JSON. Talks directly to the SkinManager, SaveLoadManager and
-## LocalDataFolder autoloads (all global services, so routing UI actions
-## through Main.gd would just add an extra hop) and never touches
-## BuildModeController or the player.
+## builds as JSON. Talks directly to the SkinManager and SaveLoadManager
+## autoloads (both global services, so routing UI actions through Main.gd
+## would just add an extra hop) and never touches BuildModeController or
+## the player.
 ##
-## Three different flows share these three buttons, chosen per click:
-## - Web, LocalDataFolder.is_supported() (Chromium browsers): everything
-##   reads/writes one folder on the player's disk, chosen once via
-##   LocalDataFolder.choose_folder(). Skins are picked from an in-game list
-##   of that folder's images; world save/load silently reads/writes
-##   "world.json" in the same folder.
-## - Web, otherwise (Firefox and its forks, e.g. Zen Browser; Safari):
-##   WebFilePicker opens a plain one-off browser file picker per import;
-##   world export still uses a browser download. Godot's own FileDialog
-##   can't help here -- see WebFilePicker's docstring for why.
+## Two flows, chosen per click:
+## - Web: WebFilePicker opens a plain one-off browser file picker for
+##   imports; world export triggers a browser download. Godot's own
+##   FileDialog can't help here -- see WebFilePicker's docstring for why.
 ## - Desktop (including the editor): real, working native FileDialogs,
 ##   since desktop Godot has unrestricted filesystem access.
+##
+## A folder-based flow (grant access to one directory once, read/write it
+## silently afterward) was tried via LocalDataFolder.gd/web/local-data-
+## bridge.js's wm_fs_* functions, using the File System Access API on
+## Chromium browsers. It's left in the codebase but disconnected from this
+## UI: in practice it added a confusing extra step (grant folder -> then
+## pick from an in-game list) without ever being confirmed to work
+## end-to-end, so the plain one-off picker below is what's actually wired
+## up. Worth revisiting later with a real Godot install to test against,
+## rather than blind.
 
 var _collapsed: bool = false
 var _content: VBoxContainer
 var _collapse_button: Button
-
-var _folder_status_label: Label
-var _pending_folder_action: String = ""
 var _pending_web_pick: String = ""
 
 ## Visible feedback for the whole import/export flow. push_warning() alone
@@ -32,9 +33,6 @@ var _pending_web_pick: String = ""
 ## anywhere in a deployed Web build, so any failure would otherwise be
 ## completely silent to an actual player.
 var _status_label: Label
-
-var _skin_picker: PopupPanel
-var _skin_item_list: ItemList
 
 var _skin_dialog: FileDialog
 var _export_dialog: FileDialog
@@ -70,19 +68,6 @@ func _ready() -> void:
 	_content = VBoxContainer.new()
 	_content.add_theme_constant_override("separation", 6)
 	outer.add_child(_content)
-
-	if LocalDataFolder.is_supported():
-		var choose_folder_button := Button.new()
-		choose_folder_button.text = "Choose Data Folder..."
-		choose_folder_button.focus_mode = Control.FOCUS_NONE
-		choose_folder_button.pressed.connect(_on_choose_folder_pressed)
-		_content.add_child(choose_folder_button)
-
-		_folder_status_label = Label.new()
-		_folder_status_label.text = "No data folder chosen yet"
-		_folder_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		_folder_status_label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
-		_content.add_child(_folder_status_label)
 
 	var import_skin_button := Button.new()
 	import_skin_button.text = "Import Skin (PNG/JPG)"
@@ -129,34 +114,8 @@ func _ready() -> void:
 	)
 	_import_dialog.file_selected.connect(_on_import_file_selected)
 
-	_skin_picker = PopupPanel.new()
-	_skin_picker.popup_hide.connect(_recapture_mouse)
-	add_child(_skin_picker)
-
-	var picker_vbox := VBoxContainer.new()
-	_skin_picker.add_child(picker_vbox)
-
-	var picker_title := Label.new()
-	picker_title.text = "Choose a skin from your data folder"
-	picker_vbox.add_child(picker_title)
-
-	_skin_item_list = ItemList.new()
-	_skin_item_list.custom_minimum_size = Vector2(260, 240)
-	_skin_item_list.item_selected.connect(_on_skin_item_selected)
-	picker_vbox.add_child(_skin_item_list)
-
 	SkinManager.skin_loaded.connect(_on_skin_load_succeeded)
 	SkinManager.skin_load_failed.connect(_on_skin_load_failed)
-
-	if LocalDataFolder.is_supported():
-		LocalDataFolder.folder_chosen.connect(_on_folder_chosen)
-		LocalDataFolder.folder_choice_failed.connect(_on_folder_choice_failed)
-		LocalDataFolder.image_list_ready.connect(_on_image_list_ready)
-		LocalDataFolder.image_list_failed.connect(_on_image_list_failed)
-		LocalDataFolder.image_bytes_ready.connect(_on_image_bytes_ready)
-		LocalDataFolder.image_read_failed.connect(_on_image_read_failed)
-		LocalDataFolder.world_saved.connect(_on_world_saved)
-		LocalDataFolder.world_loaded.connect(_on_world_loaded)
 
 	if OS.has_feature("web"):
 		WebFilePicker.file_picked.connect(_on_web_file_picked)
@@ -192,56 +151,7 @@ func _on_collapse_pressed() -> void:
 	_collapse_button.text = "+" if _collapsed else "-"
 
 
-## Runs `action` immediately if a data folder is already chosen, otherwise
-## prompts for one first and runs `action` once it's picked. Shared by all
-## three buttons' "supported browser" path so the folder-picking prompt
-## only has to be wired up once.
-func _ensure_folder_then(action: String) -> void:
-	if LocalDataFolder.has_folder:
-		_run_folder_action(action)
-		return
-	_pending_folder_action = action
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	LocalDataFolder.choose_folder()
-
-
-func _run_folder_action(action: String) -> void:
-	match action:
-		"import_skin":
-			LocalDataFolder.request_image_list()
-		"export_world":
-			LocalDataFolder.save_world_text(SaveLoadManager.export_world_to_json())
-		"import_world":
-			LocalDataFolder.load_world_text()
-
-
-func _on_choose_folder_pressed() -> void:
-	_pending_folder_action = ""
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	LocalDataFolder.choose_folder()
-
-
-func _on_folder_chosen(folder_name: String) -> void:
-	_recapture_mouse()
-	if _folder_status_label:
-		_folder_status_label.text = "Data folder: %s" % folder_name
-	if _pending_folder_action != "":
-		var action := _pending_folder_action
-		_pending_folder_action = ""
-		_run_folder_action(action)
-
-
-func _on_folder_choice_failed(reason: String) -> void:
-	_recapture_mouse()
-	_pending_folder_action = ""
-	push_warning("Could not choose data folder: %s" % reason)
-	_set_status("Could not choose data folder: %s" % reason, true)
-
-
 func _on_import_skin_pressed() -> void:
-	if LocalDataFolder.is_supported():
-		_ensure_folder_then("import_skin")
-		return
 	if OS.has_feature("web"):
 		_pending_web_pick = "skin"
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -265,39 +175,10 @@ func _on_skin_load_failed(reason: String) -> void:
 	_set_status("Skin load failed: %s" % reason, true)
 
 
-func _on_image_list_ready(filenames: Array) -> void:
-	_skin_item_list.clear()
-	for filename in filenames:
-		_skin_item_list.add_item(filename)
-	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	_skin_picker.popup_centered()
-
-
-func _on_image_list_failed(reason: String) -> void:
-	push_warning("Could not list data folder images: %s" % reason)
-	_set_status("Could not list data folder images: %s" % reason, true)
-
-
-func _on_skin_item_selected(index: int) -> void:
-	var filename := _skin_item_list.get_item_text(index)
-	LocalDataFolder.request_image_bytes(filename)
-	_skin_picker.hide()
-
-
-func _on_image_bytes_ready(filename: String, bytes: PackedByteArray) -> void:
-	SkinManager.load_skin_from_bytes(bytes, filename)
-
-
-func _on_image_read_failed(filename: String, reason: String) -> void:
-	push_warning("Could not read '%s' from data folder: %s" % [filename, reason])
-	_set_status("Could not read '%s': %s" % [filename, reason], true)
-
-
 func _on_export_pressed() -> void:
-	if LocalDataFolder.is_supported():
-		_ensure_folder_then("export_world")
-	elif OS.has_feature("web"):
+	if OS.has_feature("web"):
 		SaveLoadManager.save_to_browser_download("world.json")
+		_set_status("World download started")
 	else:
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		_export_dialog.popup_centered()
@@ -311,18 +192,7 @@ func _on_export_file_selected(path: String) -> void:
 	_recapture_mouse()
 
 
-func _on_world_saved(success: bool, reason: String) -> void:
-	if success:
-		_set_status("World saved to data folder")
-	else:
-		push_warning("Could not save world to data folder: %s" % reason)
-		_set_status("Could not save world: %s" % reason, true)
-
-
 func _on_import_world_pressed() -> void:
-	if LocalDataFolder.is_supported():
-		_ensure_folder_then("import_world")
-		return
 	if OS.has_feature("web"):
 		_pending_web_pick = "world"
 		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -359,14 +229,3 @@ func _on_web_file_pick_failed(reason: String) -> void:
 		push_warning("File pick failed: %s" % reason)
 		_set_status("File pick failed: %s" % reason, true)
 	_recapture_mouse()
-
-
-func _on_world_loaded(success: bool, text: String) -> void:
-	if not success:
-		push_warning("Could not load world from data folder: %s" % text)
-		_set_status("Could not load world from data folder: %s" % text, true)
-		return
-	if SaveLoadManager.load_from_json_text(text):
-		_set_status("World loaded from data folder")
-	else:
-		_set_status("Could not parse world.json from data folder", true)
