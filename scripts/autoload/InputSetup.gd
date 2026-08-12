@@ -17,7 +17,10 @@ const KEY_BINDINGS := {
 	"toggle_mouse_capture": [KEY_ESCAPE],
 	"toggle_ui_panel": [KEY_F1],
 	"build_mode_toggle": [KEY_B],
-	"build_cycle_shape": [KEY_TAB],
+	# Deliberately not Tab: Godot's Control focus-cycling reserves Tab to move
+	# focus between focusable UI elements (the settings panel's buttons), so
+	# it never reaches gameplay input at all -- it's consumed before this.
+	"build_cycle_shape": [KEY_E],
 	"build_cycle_dimension": [KEY_Q],
 }
 

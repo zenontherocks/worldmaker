@@ -72,5 +72,5 @@ func _refresh() -> void:
 	_label.text = (
 		"BUILD MODE  |  Shape: %s (%d/%d)  |  %s\n"
 		% [_shape_name, _shape_number, _shape_count, ", ".join(parts)]
-		+ "[Tab] shape  [Q] field  [wheel] adjust  [R]/[Shift+R] rotate  [Click] place  [B] exit"
+		+ "[E] shape  [Q] field  [wheel] adjust  [R]/[Shift+R] rotate  [Click] place  [B] exit"
 	)

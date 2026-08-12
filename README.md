@@ -17,12 +17,15 @@ worldmaker/
 ├── scenes/
 │   ├── Main.tscn              # level: ground, sky, light, World container, Player, UI
 │   └── Player.tscn            # CharacterBody3D rig: camera, raycast, build controller, ghost
+├── web/
+│   └── local-data-bridge.js    # File System Access API shim, injected into the exported page
 ├── scripts/
 │   ├── autoload/               # global singletons (Project Settings > Autoload)
 │   │   ├── InputSetup.gd       # registers all input actions in code
 │   │   ├── GameManager.gd      # shared world-root reference + id counter
 │   │   ├── SkinManager.gd      # loads PNG/JPG -> Texture2D at runtime
-│   │   └── SaveLoadManager.gd  # world JSON export/import
+│   │   ├── SaveLoadManager.gd  # world JSON export/import
+│   │   └── LocalDataFolder.gd  # Web: reads/writes one folder on the player's disk
 │   ├── core/
 │   │   └── Main.gd             # composition root: wires BuildModeController <-> UI
 │   ├── player/
@@ -68,10 +71,10 @@ small autoload services.
    |---|---|---|
    | `move_forward` / `move_back` / `move_left` / `move_right` | W / S / A / D | Walk |
    | `jump` | Space | Jump |
-   | `toggle_mouse_capture` | Esc | Release/recapture the mouse |
+   | `toggle_mouse_capture` | Esc | Release the mouse (click the view to recapture) |
    | `toggle_ui_panel` | F1 | Show/hide the settings panel |
    | `build_mode_toggle` | B | Enter/exit Build Mode |
-   | `build_cycle_shape` | Tab | Cycle Box → Plane → Cylinder → Cone → Sphere |
+   | `build_cycle_shape` | E | Cycle Box → Plane → Cylinder → Cone → Sphere |
    | `build_cycle_dimension` | Q | Select which dimension the scroll wheel edits |
    | `build_dimension_increase` / `build_dimension_decrease` | Mouse wheel up/down | Adjust the active dimension |
    | `build_rotate_cw` / `build_rotate_ccw` | R / Shift+R | Rotate the ghost/placement 15° around Y |
@@ -84,9 +87,15 @@ small autoload services.
 
 Press **F5** (or the Play button) in the editor. You should spawn standing
 on a green ground plane. Walk with WASD, look with the mouse, press **B** to
-enter Build Mode, **Tab** to pick a shape, scroll to resize, **R**/**Shift+R**
+enter Build Mode, **E** to pick a shape, scroll to resize, **R**/**Shift+R**
 to rotate, left-click to place. Press **F1** to open the corner panel and
 import a skin or export/import a world JSON file.
+
+In the editor (and any desktop export) this always uses ordinary native
+file dialogs — real OS file pickers reading/writing the actual filesystem,
+no special setup needed. The "one folder on your disk" flow described
+below only applies to the Web export, where browsers don't allow that kind
+of direct filesystem access by default.
 
 ## 4. Exporting for WebGL / HTML5
 
@@ -223,23 +232,52 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   `Input.mouse_mode`. That removes an entire class of desync bug where the
   camera thinks it should still be spinning while a file dialog is open.
 
-- **Two save paths for one save format.** `SaveLoadManager.gd` always
-  builds the same JSON (see the schema comment at the top of that file).
-  Desktop exports write it straight to a path chosen via `FileDialog`.
-  Web exports can't write to an arbitrary host path — browsers only allow
-  downloads — so on Web the same JSON string is handed to
-  `JavaScriptBridge.download_buffer()` instead, which triggers a normal
-  browser file-save. Skin *import* doesn't need this split because Godot's
-  native open dialog already resolves to a browser file picker on Web.
+- **One local data folder on Web, real `FileDialog` everywhere else.**
+  Desktop exports (and the editor) always use ordinary native `FileDialog`s
+  reading/writing the real filesystem — no special handling needed, since
+  desktop Godot has unrestricted file access. Web is different: browsers
+  sandbox pages away from the filesystem by default, and testing showed
+  Godot's "native" `FileDialog` fallback on Web isn't reliable — it can
+  render its own in-engine dialog instead of the browser's real OS picker,
+  browsing an empty virtual filesystem rather than anything on the
+  player's disk. `LocalDataFolder.gd` (`scripts/autoload/`) sidesteps this
+  entirely on Chromium-based browsers (Chrome, Edge, Opera) using the
+  browser's [File System Access
+  API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API):
+  the player grants access to one real folder on their disk *once*, and
+  from then on skins are listed/read and `world.json` is written/read
+  directly from that folder — no uploads, no per-file dialogs, no server
+  ever sees any of it. The actual browser calls live in
+  `web/local-data-bridge.js`, a plain JS file injected into the exported
+  page via `export_presets.cfg`'s `html/head_include` (kept as a real
+  `.js` file rather than an inline string so it stays readable/editable,
+  and copied into `build/` by the CI workflow since Godot's exporter only
+  ships its own engine output). Firefox and Safari don't implement this
+  API, so `LocalDataFolder.is_supported()` gates it off there and
+  `SettingsPanelUI` falls back to the original `FileDialog`/
+  `JavaScriptBridge.download_buffer()` flow, same as before.
 
 - **Skins are referenced by name, not embedded.** A placed object stores the
   skin's file name (`skin_key`) in the JSON, not the image itself, keeping
-  world files small. The trade-off: reloading a world in a browser tab that
-  never had that image loaded this session will place the object with the
-  default material until the user re-imports that same-named file via the
-  panel. This is a deliberate scope boundary for a "lightweight, web-first"
-  project — embedding base64 image data in the JSON would be the
-  straightforward extension if that's ever a problem.
+  world files small. The trade-off: reloading a world before that image has
+  been read this session (e.g. a fresh page load, before choosing the data
+  folder) will place the object with the default material until the
+  matching file is available again. This is a deliberate scope boundary for
+  a "lightweight, local-first" project — embedding base64 image data in the
+  JSON would be the straightforward extension if that's ever a problem.
+
+- **UI buttons opt out of keyboard focus.** Every procedurally-built
+  `Button` sets `focus_mode = Control.FOCUS_NONE`. Godot's built-in
+  `ui_accept` action (Space *and* Enter) re-presses whatever Control last
+  held keyboard focus, and Space is also this game's jump key — without
+  opting out, clicking any panel button would make Space silently jump
+  *and* re-trigger that button from then on. `PlayerController.gd` has the
+  same class of fix for the same reason: jump/movement read raw `Input`
+  state every physics frame rather than routed events, so they're never
+  automatically blocked by GUI focus the way `_unhandled_input` is — they
+  explicitly check `Input.mouse_mode == MOUSE_MODE_CAPTURED` (the same
+  "is the player actively playing vs. using a menu" signal used
+  throughout the UI) instead.
 
 - **`Main.gd` is the only composition root.** Every other script either
   reaches an autoload (global by design) or emits a signal without knowing

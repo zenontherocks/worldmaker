@@ -30,6 +30,11 @@ jobs:
         run: |
           mkdir -p build
           godot --headless --export-release "Web" build/index.html
+          # The exported index.html references this via a <script src> tag
+          # (export_presets.cfg's html/head_include) but Godot's exporter
+          # only ships the engine's own output files, so it has to be
+          # copied alongside them by hand.
+          cp web/local-data-bridge.js build/local-data-bridge.js
 
       - name: Sync build to Cloudflare R2
         env:
