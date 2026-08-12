@@ -1,14 +1,22 @@
-// Bridges Godot's Web export to the browser's File System Access API, so
-// the game can read/write a single folder on the player's own disk (skins
-// + world.json) instead of uploading anything or relying on the browser's
-// downloads folder. See scripts/autoload/LocalDataFolder.gd for the
-// GDScript side of this bridge.
+// Bridges Godot's Web export to real browser file access, since Godot's own
+// FileDialog can't provide it on Web: DisplayServer never reports
+// FEATURE_NATIVE_DIALOG_FILE for the Web platform in any browser, so
+// use_native_dialog silently does nothing there and it always falls back
+// to Godot's own in-engine dialog browsing an empty virtual filesystem.
 //
-// Only Chromium-based browsers (Chrome, Edge, Opera) implement this API as
-// of this writing -- wm_fs_supported() lets the game detect that and fall
-// back to the ordinary file-dialog/download flow elsewhere.
+// Two independent mechanisms, used by two different GDScript autoloads:
+// - wm_fs_* (scripts/autoload/LocalDataFolder.gd): the File System Access
+//   API, which lets the player grant access to one real folder on their
+//   disk once and read/write files in it silently afterward. Only
+//   Chromium-based browsers (Chrome, Edge, Opera) implement it --
+//   wm_fs_supported() lets the game detect that.
+// - wm_pick_file (scripts/autoload/WebFilePicker.gd): a plain
+//   <input type="file">, which is universally supported (including
+//   Firefox and its forks, e.g. Zen Browser, and Safari) but only ever
+//   picks one file at a time with no memory of "the folder" -- the
+//   fallback for browsers wm_fs_supported() says no to.
 //
-// Every function here takes a Godot-created callback (via
+// Every wm_fs_* function here takes a Godot-created callback (via
 // JavaScriptBridge.create_callback) as its last argument and calls it with
 // (success: bool, payload: string) -- payload is either the result (a
 // folder/file name, base64 image bytes, or file text) or an error message.
@@ -101,4 +109,52 @@ async function wm_fs_read_text(filename, onDone) {
 	} catch (e) {
 		onDone(false, String(e));
 	}
+}
+
+// Universal fallback for browsers without the File System Access API
+// (Firefox and its forks, e.g. Zen Browser; Safari): Godot's own FileDialog
+// can't help here either, since DisplayServer never reports
+// FEATURE_NATIVE_DIALOG_FILE for the Web platform in any browser -- it
+// always falls back to Godot's own in-engine dialog browsing an empty
+// virtual filesystem, not anything real. A plain <input type="file"> is
+// the one file-picking mechanism that's actually native and universal.
+//
+// onDone(success, filenameOrReason, payload) -- payload is the file's text
+// for a .json file, base64-encoded bytes otherwise. Canceling the picker
+// calls onDone(false, "canceled", "").
+function wm_pick_file(accept, onDone) {
+	const input = document.createElement("input");
+	input.type = "file";
+	input.accept = accept;
+	input.style.display = "none";
+	document.body.appendChild(input);
+
+	function cleanup() {
+		if (input.parentNode) input.parentNode.removeChild(input);
+	}
+
+	input.addEventListener("cancel", () => {
+		cleanup();
+		onDone(false, "canceled", "");
+	}, { once: true });
+
+	input.addEventListener("change", () => {
+		const file = input.files && input.files[0];
+		cleanup();
+		if (!file) {
+			onDone(false, "No file selected", "");
+			return;
+		}
+		if (file.name.toLowerCase().endsWith(".json")) {
+			file.text()
+				.then((text) => onDone(true, file.name, text))
+				.catch((e) => onDone(false, String(e), ""));
+		} else {
+			file.arrayBuffer()
+				.then((buffer) => onDone(true, file.name, _wmBufferToBase64(buffer)))
+				.catch((e) => onDone(false, String(e), ""));
+		}
+	}, { once: true });
+
+	input.click();
 }

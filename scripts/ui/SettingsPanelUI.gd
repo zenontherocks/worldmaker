@@ -6,14 +6,18 @@ class_name SettingsPanelUI
 ## through Main.gd would just add an extra hop) and never touches
 ## BuildModeController or the player.
 ##
-## Two different flows share these three buttons, chosen per click based on
-## LocalDataFolder.is_supported():
-## - Supported (Chromium browsers): everything reads/writes one folder on
-##   the player's disk, chosen once via LocalDataFolder.choose_folder().
-##   Skins are picked from an in-game list of that folder's images; world
-##   save/load silently reads/writes "world.json" in the same folder.
-## - Unsupported (desktop, or Firefox/Safari): the older FileDialog/
-##   browser-download flow, which needs no special browser feature.
+## Three different flows share these three buttons, chosen per click:
+## - Web, LocalDataFolder.is_supported() (Chromium browsers): everything
+##   reads/writes one folder on the player's disk, chosen once via
+##   LocalDataFolder.choose_folder(). Skins are picked from an in-game list
+##   of that folder's images; world save/load silently reads/writes
+##   "world.json" in the same folder.
+## - Web, otherwise (Firefox and its forks, e.g. Zen Browser; Safari):
+##   WebFilePicker opens a plain one-off browser file picker per import;
+##   world export still uses a browser download. Godot's own FileDialog
+##   can't help here -- see WebFilePicker's docstring for why.
+## - Desktop (including the editor): real, working native FileDialogs,
+##   since desktop Godot has unrestricted filesystem access.
 
 var _collapsed: bool = false
 var _content: VBoxContainer
@@ -21,6 +25,7 @@ var _collapse_button: Button
 
 var _folder_status_label: Label
 var _pending_folder_action: String = ""
+var _pending_web_pick: String = ""
 
 var _skin_picker: PopupPanel
 var _skin_item_list: ItemList
@@ -141,6 +146,10 @@ func _ready() -> void:
 		LocalDataFolder.world_saved.connect(_on_world_saved)
 		LocalDataFolder.world_loaded.connect(_on_world_loaded)
 
+	if OS.has_feature("web"):
+		WebFilePicker.file_picked.connect(_on_web_file_picked)
+		WebFilePicker.file_pick_failed.connect(_on_web_file_pick_failed)
+
 
 func _make_file_dialog(mode: FileDialog.FileMode, filters: PackedStringArray) -> FileDialog:
 	var dialog := FileDialog.new()
@@ -213,6 +222,11 @@ func _on_import_skin_pressed() -> void:
 	if LocalDataFolder.is_supported():
 		_ensure_folder_then("import_skin")
 		return
+	if OS.has_feature("web"):
+		_pending_web_pick = "skin"
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		WebFilePicker.pick_file(".png,.jpg,.jpeg")
+		return
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_skin_dialog.popup_centered()
 
@@ -276,12 +290,34 @@ func _on_import_world_pressed() -> void:
 	if LocalDataFolder.is_supported():
 		_ensure_folder_then("import_world")
 		return
+	if OS.has_feature("web"):
+		_pending_web_pick = "world"
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		WebFilePicker.pick_file(".json")
+		return
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_import_dialog.popup_centered()
 
 
 func _on_import_file_selected(path: String) -> void:
 	SaveLoadManager.load_from_path(path)
+	_recapture_mouse()
+
+
+func _on_web_file_picked(filename: String, payload: String) -> void:
+	var pick := _pending_web_pick
+	_pending_web_pick = ""
+	if pick == "skin":
+		SkinManager.load_skin_from_bytes(Marshalls.base64_to_raw(payload), filename)
+	elif pick == "world":
+		SaveLoadManager.load_from_json_text(payload)
+	_recapture_mouse()
+
+
+func _on_web_file_pick_failed(reason: String) -> void:
+	_pending_web_pick = ""
+	if reason != "canceled":
+		push_warning("File pick failed: %s" % reason)
 	_recapture_mouse()
 
 

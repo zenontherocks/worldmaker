@@ -18,14 +18,15 @@ worldmaker/
 │   ├── Main.tscn              # level: ground, sky, light, World container, Player, UI
 │   └── Player.tscn            # CharacterBody3D rig: camera, raycast, build controller, ghost
 ├── web/
-│   └── local-data-bridge.js    # File System Access API shim, injected into the exported page
+│   └── local-data-bridge.js    # File System Access API + <input type=file> shim for the exported page
 ├── scripts/
 │   ├── autoload/               # global singletons (Project Settings > Autoload)
 │   │   ├── InputSetup.gd       # registers all input actions in code
 │   │   ├── GameManager.gd      # shared world-root reference + id counter
 │   │   ├── SkinManager.gd      # loads PNG/JPG -> Texture2D at runtime
 │   │   ├── SaveLoadManager.gd  # world JSON export/import
-│   │   └── LocalDataFolder.gd  # Web: reads/writes one folder on the player's disk
+│   │   ├── LocalDataFolder.gd  # Web+Chromium: reads/writes one folder on the player's disk
+│   │   └── WebFilePicker.gd    # Web+everyone else: one-off <input type=file> picker
 │   ├── core/
 │   │   └── Main.gd             # composition root: wires BuildModeController <-> UI
 │   ├── player/
@@ -232,30 +233,40 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   `Input.mouse_mode`. That removes an entire class of desync bug where the
   camera thinks it should still be spinning while a file dialog is open.
 
-- **One local data folder on Web, real `FileDialog` everywhere else.**
-  Desktop exports (and the editor) always use ordinary native `FileDialog`s
-  reading/writing the real filesystem — no special handling needed, since
-  desktop Godot has unrestricted file access. Web is different: browsers
-  sandbox pages away from the filesystem by default, and testing showed
-  Godot's "native" `FileDialog` fallback on Web isn't reliable — it can
-  render its own in-engine dialog instead of the browser's real OS picker,
-  browsing an empty virtual filesystem rather than anything on the
-  player's disk. `LocalDataFolder.gd` (`scripts/autoload/`) sidesteps this
-  entirely on Chromium-based browsers (Chrome, Edge, Opera) using the
-  browser's [File System Access
-  API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API):
-  the player grants access to one real folder on their disk *once*, and
-  from then on skins are listed/read and `world.json` is written/read
-  directly from that folder — no uploads, no per-file dialogs, no server
-  ever sees any of it. The actual browser calls live in
-  `web/local-data-bridge.js`, a plain JS file injected into the exported
-  page via `export_presets.cfg`'s `html/head_include` (kept as a real
-  `.js` file rather than an inline string so it stays readable/editable,
-  and copied into `build/` by the CI workflow since Godot's exporter only
-  ships its own engine output). Firefox and Safari don't implement this
-  API, so `LocalDataFolder.is_supported()` gates it off there and
-  `SettingsPanelUI` falls back to the original `FileDialog`/
-  `JavaScriptBridge.download_buffer()` flow, same as before.
+- **Real `FileDialog` on desktop; two different Web fallbacks, never
+  Godot's own "native" Web dialog.** Desktop exports (and the editor)
+  always use ordinary native `FileDialog`s reading/writing the real
+  filesystem — no special handling needed, since desktop Godot has
+  unrestricted file access. On Web, `FileDialog`'s `use_native_dialog`
+  turns out to silently do nothing in *any* browser: Godot's
+  `DisplayServer` never reports `FEATURE_NATIVE_DIALOG_FILE` for the Web
+  platform at all, so it always renders its own in-engine dialog browsing
+  an empty virtual filesystem instead of a real OS picker, regardless of
+  which browser is running it. Two separate replacements handle that,
+  both living in `web/local-data-bridge.js` (a plain JS file injected into
+  the exported page via `export_presets.cfg`'s `html/head_include`, kept
+  as a real `.js` file rather than an inline string so it stays
+  readable/editable, and copied into `build/` by the CI workflow since
+  Godot's exporter only ships its own engine output):
+  - `LocalDataFolder.gd`: on Chromium-based browsers (Chrome, Edge, Opera),
+    the browser's [File System Access
+    API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API)
+    lets the player grant access to one real folder on their disk *once*,
+    and from then on skins are listed/read and `world.json` is
+    written/read directly from that folder — no uploads, no per-file
+    dialogs, no server ever sees any of it.
+  - `WebFilePicker.gd`: everywhere else on Web (Firefox and its forks —
+    e.g. Zen Browser — and Safari, none of which implement the File System
+    Access API), a plain HTML `<input type="file">` element is triggered
+    directly instead of going anywhere near `FileDialog`. This is a much
+    older, universally-supported browser mechanism — the same one behind
+    "attach a file" on any ordinary website — so it works even though the
+    fancier folder-based flow can't. It has no memory of a folder, though:
+    every import is a fresh one-off picker, and world export still uses
+    `JavaScriptBridge.download_buffer()` (a normal browser download).
+  `SettingsPanelUI` picks between these three paths (`LocalDataFolder`,
+  `WebFilePicker`, real `FileDialog`) per button press, in that order of
+  preference.
 
 - **Skins are referenced by name, not embedded.** A placed object stores the
   skin's file name (`skin_key`) in the JSON, not the image itself, keeping

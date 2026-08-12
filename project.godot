@@ -18,6 +18,7 @@ GameManager="*res://scripts/autoload/GameManager.gd"
 SkinManager="*res://scripts/autoload/SkinManager.gd"
 SaveLoadManager="*res://scripts/autoload/SaveLoadManager.gd"
 LocalDataFolder="*res://scripts/autoload/LocalDataFolder.gd"
+WebFilePicker="*res://scripts/autoload/WebFilePicker.gd"
 
 [display]
 
