@@ -18,15 +18,14 @@ worldmaker/
 │   ├── Main.tscn              # level: ground, sky, light, World container, Player, UI
 │   └── Player.tscn            # CharacterBody3D rig: camera, raycast, build controller, ghost
 ├── web/
-│   └── local-data-bridge.js    # File System Access API + <input type=file> shim for the exported page
+│   └── local-data-bridge.js    # universal <input type=file> shim for the exported page
 ├── scripts/
 │   ├── autoload/               # global singletons (Project Settings > Autoload)
 │   │   ├── InputSetup.gd       # registers all input actions in code
 │   │   ├── GameManager.gd      # shared world-root reference + id counter
 │   │   ├── SkinManager.gd      # loads PNG/JPG -> Texture2D at runtime
 │   │   ├── SaveLoadManager.gd  # world JSON export/import
-│   │   ├── LocalDataFolder.gd  # Web+Chromium: reads/writes one folder on the player's disk
-│   │   └── WebFilePicker.gd    # Web+everyone else: one-off <input type=file> picker
+│   │   └── WebFilePicker.gd    # Web: one-off <input type=file> picker, every browser
 │   ├── core/
 │   │   └── Main.gd             # composition root: wires BuildModeController <-> UI
 │   ├── player/
@@ -39,8 +38,8 @@ worldmaker/
 │   │   ├── GhostPreview.gd     # translucent placement preview
 │   │   └── BuildModeController.gd # raycast, cycling, dimension edit, placement
 │   └── ui/
-│       ├── UIRoot.gd           # builds the two UI pieces, F1 toggle
-│       ├── SettingsPanelUI.gd  # collapsible corner panel + file dialogs
+│       ├── UIRoot.gd           # builds the two UI pieces
+│       ├── PauseMenuUI.gd      # Esc pause menu: import/export, pauses the tree
 │       └── BuildHUD.gd         # bottom-of-screen build status readout
 ```
 
@@ -72,8 +71,7 @@ small autoload services.
    |---|---|---|
    | `move_forward` / `move_back` / `move_left` / `move_right` | W / S / A / D | Walk |
    | `jump` | Space | Jump |
-   | `toggle_mouse_capture` | Esc | Release the mouse (click the view to recapture) |
-   | `toggle_ui_panel` | F1 | Show/hide the settings panel |
+   | `toggle_pause_menu` | Esc | Open/close the pause menu (pauses the game, releases the mouse) |
    | `build_mode_toggle` | B | Enter/exit Build Mode |
    | `build_cycle_shape` | E | Cycle Box → Plane → Cylinder → Cone → Sphere |
    | `build_cycle_dimension` | Q | Select which dimension the scroll wheel edits |
@@ -89,14 +87,14 @@ small autoload services.
 Press **F5** (or the Play button) in the editor. You should spawn standing
 on a green ground plane. Walk with WASD, look with the mouse, press **B** to
 enter Build Mode, **E** to pick a shape, scroll to resize, **R**/**Shift+R**
-to rotate, left-click to place. Press **F1** to open the corner panel and
+to rotate, left-click to place. Press **Esc** to open the pause menu and
 import a skin or export/import a world JSON file.
 
-In the editor (and any desktop export) this always uses ordinary native
-file dialogs — real OS file pickers reading/writing the actual filesystem,
-no special setup needed. The "one folder on your disk" flow described
-below only applies to the Web export, where browsers don't allow that kind
-of direct filesystem access by default.
+In the editor (and any desktop export) the pause menu always uses ordinary
+native file dialogs — real OS file pickers reading/writing the actual
+filesystem, no special setup needed. The Web export picks a file a
+different way (see below), since browsers don't allow that kind of direct
+filesystem access by default.
 
 ## 4. Exporting for WebGL / HTML5
 
@@ -112,11 +110,10 @@ of direct filesystem access by default.
    will not work due to browser CORS restrictions on WASM). For a quick local
    check: `python3 -m http.server` from the export folder, then open
    `http://localhost:8000`.
-6. Texture-skin import and world JSON import both use Godot's native
-   `FileDialog` (`use_native_dialog = true`), which on Web uses the browser's
-   file picker — no extra work needed. World **export** on Web instead
-   triggers a normal browser download (see the architecture notes below for
-   why).
+6. On Web, texture-skin import and world JSON import both go through
+   `WebFilePicker.gd`/`web/local-data-bridge.js` instead of Godot's
+   `FileDialog` (see the architecture notes below for why). World
+   **export** on Web triggers a normal browser download.
 
 ## 5. Deploying to your domain (Cloudflare R2, automated)
 
@@ -211,7 +208,7 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   tool) without editing `BuildModeController`.
 
 - **Procedural UI instead of hand-authored `.tscn` Control trees.** The
-  settings panel and HUD are built in code (`SettingsPanelUI.gd`,
+  pause menu and HUD are built in code (`PauseMenuUI.gd`,
   `BuildHUD.gd`) rather than as static scenes. The HUD's dimension rows
   genuinely depend on which shape is selected (a Sphere has one field, a Box
   has three) — a fixed scene tree can't express that without runtime
@@ -229,53 +226,67 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
 
 - **Single mouse-capture authority.** Rather than each system tracking its
   own "is the mouse captured" boolean, every script (camera look, the
-  settings panel's file-dialog flow) reads and writes the same global
-  `Input.mouse_mode`. That removes an entire class of desync bug where the
-  camera thinks it should still be spinning while a file dialog is open.
+  pause menu's open/close and file-dialog flow) reads and writes the same
+  global `Input.mouse_mode`. That removes an entire class of desync bug
+  where the camera thinks it should still be spinning while a menu or file
+  dialog is open.
 
-- **Real `FileDialog` on desktop; two different Web fallbacks, never
-  Godot's own "native" Web dialog.** Desktop exports (and the editor)
-  always use ordinary native `FileDialog`s reading/writing the real
-  filesystem — no special handling needed, since desktop Godot has
+- **Real `FileDialog` on desktop; a single universal fallback on Web,
+  never Godot's own "native" Web dialog.** Desktop exports (and the
+  editor) always use ordinary native `FileDialog`s reading/writing the
+  real filesystem — no special handling needed, since desktop Godot has
   unrestricted file access. On Web, `FileDialog`'s `use_native_dialog`
   turns out to silently do nothing in *any* browser: Godot's
   `DisplayServer` never reports `FEATURE_NATIVE_DIALOG_FILE` for the Web
   platform at all, so it always renders its own in-engine dialog browsing
   an empty virtual filesystem instead of a real OS picker, regardless of
-  which browser is running it. Two separate replacements handle that,
-  both living in `web/local-data-bridge.js` (a plain JS file injected into
-  the exported page via `export_presets.cfg`'s `html/head_include`, kept
-  as a real `.js` file rather than an inline string so it stays
-  readable/editable, and copied into `build/` by the CI workflow since
-  Godot's exporter only ships its own engine output):
-  - `LocalDataFolder.gd`: on Chromium-based browsers (Chrome, Edge, Opera),
-    the browser's [File System Access
-    API](https://developer.mozilla.org/en-US/docs/Web/API/File_System_API)
-    lets the player grant access to one real folder on their disk *once*,
-    and from then on skins are listed/read and `world.json` is
-    written/read directly from that folder — no uploads, no per-file
-    dialogs, no server ever sees any of it.
-  - `WebFilePicker.gd`: everywhere else on Web (Firefox and its forks —
-    e.g. Zen Browser — and Safari, none of which implement the File System
-    Access API), a plain HTML `<input type="file">` element is triggered
-    directly instead of going anywhere near `FileDialog`. This is a much
-    older, universally-supported browser mechanism — the same one behind
-    "attach a file" on any ordinary website — so it works even though the
-    fancier folder-based flow can't. It has no memory of a folder, though:
-    every import is a fresh one-off picker, and world export still uses
-    `JavaScriptBridge.download_buffer()` (a normal browser download).
-  `SettingsPanelUI` picks between these three paths (`LocalDataFolder`,
-  `WebFilePicker`, real `FileDialog`) per button press, in that order of
-  preference.
+  which browser is running it. `WebFilePicker.gd` replaces it on Web with
+  a plain HTML `<input type="file">` element, triggered via
+  `web/local-data-bridge.js` (a plain JS file injected into the exported
+  page via `export_presets.cfg`'s `html/head_include`, kept as a real
+  `.js` file rather than an inline string so it stays readable/editable,
+  and copied into `build/` by the CI workflow since Godot's exporter only
+  ships its own engine output). This is a much older, universally-
+  supported browser mechanism — the same one behind "attach a file" on
+  any ordinary website — so it behaves identically across Chromium,
+  Firefox (and its forks, e.g. Zen Browser), and Safari. Two things worth
+  knowing about it:
+  - **No `<input accept>` filter.** An earlier version filtered by file
+    type, which made browsers grey out non-matching files in the OS
+    dialog — standard, correct behavior, but a real target file appearing
+    unselectable for any reason (an unexpected extension, a cloud-sync
+    placeholder file, a filter-string quirk) was a recurring source of
+    confusion. Nothing is filtered now, so nothing can ever be greyed
+    out; `PauseMenuUI.gd` checks the picked filename's extension itself
+    afterward and shows a clear in-menu error if it's the wrong type.
+  - **Polling, not a JS→GDScript callback.** The result comes back via a
+    plain global object (`window.wmFileResult`) that `WebFilePicker.gd`
+    polls for in `_process()`, rather than `JavaScriptBridge.
+    create_callback()`. Every callback-based JS-to-Godot return path tried
+    earlier in this project (including an abandoned File System Access
+    API folder-picker flow) failed to fire with no error on either side at
+    some point, while `JavaScriptBridge.eval()` was reliable in both
+    directions throughout — polling avoids the whole suspect code path.
+  There's no folder concept anymore: every import is a fresh one-off
+  picker, and world export uses `JavaScriptBridge.download_buffer()` (a
+  normal browser download) exactly as before.
+
+- **Pause menu instead of an always-visible panel.** `PauseMenuUI.gd` is
+  hidden until **Esc**, at which point it sets `get_tree().paused = true`
+  and shows itself — everything else in the scene (player, camera, build
+  mode) uses Godot's default `PROCESS_MODE_PAUSABLE`, so it freezes for
+  free with no per-script gating needed. The menu itself (and its
+  `FileDialog`s) opts in to `PROCESS_MODE_ALWAYS` so its buttons and
+  `WebFilePicker`'s poll keep working while paused.
 
 - **Skins are referenced by name, not embedded.** A placed object stores the
   skin's file name (`skin_key`) in the JSON, not the image itself, keeping
   world files small. The trade-off: reloading a world before that image has
-  been read this session (e.g. a fresh page load, before choosing the data
-  folder) will place the object with the default material until the
-  matching file is available again. This is a deliberate scope boundary for
-  a "lightweight, local-first" project — embedding base64 image data in the
-  JSON would be the straightforward extension if that's ever a problem.
+  been imported this session (e.g. a fresh page load) will place the
+  object with the default material until the matching file is imported
+  again. This is a deliberate scope boundary for a "lightweight,
+  local-first" project — embedding base64 image data in the JSON would be
+  the straightforward extension if that's ever a problem.
 
 - **UI buttons opt out of keyboard focus.** Every procedurally-built
   `Button` sets `focus_mode = Control.FOCUS_NONE`. Godot's built-in

@@ -1,64 +1,22 @@
-// Bridges Godot's Web export to real browser file access, since Godot's own
-// FileDialog can't provide it on Web: DisplayServer never reports
+// Bridges Godot's Web export to a real browser file picker, since Godot's
+// own FileDialog can't provide it on Web: DisplayServer never reports
 // FEATURE_NATIVE_DIALOG_FILE for the Web platform in any browser, so
-// use_native_dialog silently does nothing there and it always falls back
-// to Godot's own in-engine dialog browsing an empty virtual filesystem.
+// use_native_dialog silently does nothing there and it always falls back to
+// Godot's own in-engine dialog browsing an empty virtual filesystem.
 //
-// Two independent mechanisms, used by two different GDScript autoloads:
-// - wm_fs_* (scripts/autoload/LocalDataFolder.gd): the File System Access
-//   API, which lets the player grant access to one real folder on their
-//   disk once and read/write files in it silently afterward. Only
-//   Chromium-based browsers (Chrome, Edge, Opera) implement it --
-//   wm_fs_supported() lets the game detect that.
-// - wm_pick_file (scripts/autoload/WebFilePicker.gd): a plain
-//   <input type="file">, which is universally supported (including
-//   Firefox and its forks, e.g. Zen Browser, and Safari) but only ever
-//   picks one file at a time with no memory of "the folder" -- the
-//   fallback for browsers wm_fs_supported() says no to.
+// A plain <input type="file"> is the one file-picking mechanism that's
+// actually native and universal (Chromium, Firefox and its forks e.g. Zen
+// Browser, Safari all support it) -- used by scripts/autoload/WebFilePicker.gd.
+// Deliberately no <input accept> filter: browsers grey out files that don't
+// match it, and a real target file appearing unselectable for any reason
+// (an unexpected extension, a cloud-sync placeholder, a filter-string quirk)
+// was a recurring source of confusion. Godot validates the picked filename
+// itself after the fact instead.
 //
-// Every wm_fs_* function here takes a Godot-created callback (via
-// JavaScriptBridge.create_callback) as its last argument and calls it with
-// (success: bool, payload: string) -- payload is either the result (a
-// folder/file name, base64 image bytes, or file text) or an error message.
-
-function wm_fs_supported() {
-	return typeof window.showDirectoryPicker === "function";
-}
-
-let _wmDirHandle = null;
-
-async function wm_fs_choose_folder(onDone) {
-	console.log("[wm] wm_fs_choose_folder: calling showDirectoryPicker");
-	try {
-		_wmDirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
-		console.log("[wm] wm_fs_choose_folder: picker resolved, name =", _wmDirHandle.name, "calling onDone");
-		onDone(true, _wmDirHandle.name);
-		console.log("[wm] wm_fs_choose_folder: onDone call returned");
-	} catch (e) {
-		console.log("[wm] wm_fs_choose_folder: rejected/threw:", e);
-		onDone(false, String(e));
-	}
-}
-
-async function wm_fs_list_images(onDone) {
-	if (!_wmDirHandle) {
-		onDone(false, "No folder chosen");
-		return;
-	}
-	try {
-		const names = [];
-		for await (const entry of _wmDirHandle.values()) {
-			if (entry.kind !== "file") continue;
-			const lower = entry.name.toLowerCase();
-			if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
-				names.push(entry.name);
-			}
-		}
-		onDone(true, JSON.stringify(names));
-	} catch (e) {
-		onDone(false, String(e));
-	}
-}
+// The result comes back via a plain global object polled from GDScript
+// (see WebFilePicker.gd's docstring for why: JavaScriptBridge.create_callback
+// callbacks have repeatedly failed to fire with no error on either side in
+// this project, while JavaScriptBridge.eval() has been reliable both ways).
 
 function _wmBufferToBase64(buffer) {
 	let binary = "";
@@ -70,66 +28,15 @@ function _wmBufferToBase64(buffer) {
 	return btoa(binary);
 }
 
-async function wm_fs_read_image(filename, onDone) {
-	if (!_wmDirHandle) {
-		onDone(false, "No folder chosen");
-		return;
-	}
-	try {
-		const fileHandle = await _wmDirHandle.getFileHandle(filename);
-		const file = await fileHandle.getFile();
-		const buffer = await file.arrayBuffer();
-		onDone(true, _wmBufferToBase64(buffer));
-	} catch (e) {
-		onDone(false, String(e));
-	}
-}
+// wmFileResult starts null; once a pick finishes (success, failure, or
+// cancel) it becomes {success, name, payload} for GDScript to poll for and
+// consume. payload is the file's text for a .json file, base64-encoded
+// bytes otherwise; on failure name carries the reason ("canceled" on cancel).
+window.wmFileResult = null;
 
-async function wm_fs_write_text(filename, text, onDone) {
-	if (!_wmDirHandle) {
-		onDone(false, "No folder chosen");
-		return;
-	}
-	try {
-		const fileHandle = await _wmDirHandle.getFileHandle(filename, { create: true });
-		const writable = await fileHandle.createWritable();
-		await writable.write(text);
-		await writable.close();
-		onDone(true, "");
-	} catch (e) {
-		onDone(false, String(e));
-	}
-}
-
-async function wm_fs_read_text(filename, onDone) {
-	if (!_wmDirHandle) {
-		onDone(false, "No folder chosen");
-		return;
-	}
-	try {
-		const fileHandle = await _wmDirHandle.getFileHandle(filename);
-		const file = await fileHandle.getFile();
-		onDone(true, await file.text());
-	} catch (e) {
-		onDone(false, String(e));
-	}
-}
-
-// Universal fallback for browsers without the File System Access API
-// (Firefox and its forks, e.g. Zen Browser; Safari): Godot's own FileDialog
-// can't help here either, since DisplayServer never reports
-// FEATURE_NATIVE_DIALOG_FILE for the Web platform in any browser -- it
-// always falls back to Godot's own in-engine dialog browsing an empty
-// virtual filesystem, not anything real. A plain <input type="file"> is
-// the one file-picking mechanism that's actually native and universal.
-//
-// onDone(success, filenameOrReason, payload) -- payload is the file's text
-// for a .json file, base64-encoded bytes otherwise. Canceling the picker
-// calls onDone(false, "canceled", "").
-function wm_pick_file(accept, onDone) {
+function wmPickFile() {
 	const input = document.createElement("input");
 	input.type = "file";
-	input.accept = accept;
 	// display:none keeps some browsers (notably Firefox) from firing a
 	// native picker on .click() at all -- position off-screen instead so
 	// the element stays part of the render tree without being visible.
@@ -139,63 +46,31 @@ function wm_pick_file(accept, onDone) {
 	input.style.opacity = "0";
 	document.body.appendChild(input);
 
-	function cleanup() {
+	function finish(success, name, payload) {
+		window.wmFileResult = { success: success, name: name, payload: payload };
 		if (input.parentNode) input.parentNode.removeChild(input);
 	}
 
-	input.addEventListener("cancel", () => {
-		cleanup();
-		onDone(false, "canceled", "");
-	}, { once: true });
+	input.addEventListener("cancel", () => finish(false, "canceled", ""), { once: true });
 
 	input.addEventListener("change", () => {
-		console.log("[wm] wm_pick_file: change event fired, files =", input.files);
 		const file = input.files && input.files[0];
-		cleanup();
 		if (!file) {
-			console.log("[wm] wm_pick_file: no file in input.files, calling onDone(false)");
-			onDone(false, "No file selected", "");
+			finish(false, "No file selected", "");
 			return;
 		}
-		console.log("[wm] wm_pick_file: got file", file.name, file.size, "bytes, reading it");
 		if (file.name.toLowerCase().endsWith(".json")) {
 			file.text()
-				.then((text) => {
-					console.log("[wm] wm_pick_file: text() resolved, calling onDone(true)");
-					onDone(true, file.name, text);
-					console.log("[wm] wm_pick_file: onDone call returned");
-				})
-				.catch((e) => {
-					console.log("[wm] wm_pick_file: text() rejected:", e);
-					onDone(false, String(e), "");
-				});
+				.then((text) => finish(true, file.name, text))
+				.catch((e) => finish(false, String(e), ""));
 		} else {
 			file.arrayBuffer()
-				.then((buffer) => {
-					console.log("[wm] wm_pick_file: arrayBuffer() resolved,", buffer.byteLength, "bytes, encoding + calling onDone(true)");
-					onDone(true, file.name, _wmBufferToBase64(buffer));
-					console.log("[wm] wm_pick_file: onDone call returned");
-				})
-				.catch((e) => {
-					console.log("[wm] wm_pick_file: arrayBuffer() rejected:", e);
-					onDone(false, String(e), "");
-				});
+				.then((buffer) => finish(true, file.name, _wmBufferToBase64(buffer)))
+				.catch((e) => finish(false, String(e), ""));
 		}
 	}, { once: true });
 
-	console.log("[wm] wm_pick_file: calling input.click()");
 	input.click();
 }
 
-// Explicit assignment rather than relying on plain top-level function
-// declarations implicitly becoming window properties: GDScript reaches
-// these through JavaScriptBridge.get_interface("window").<name>(...), and
-// that property-access path has not been reliably finding them.
-window.wm_fs_supported = wm_fs_supported;
-window.wm_fs_choose_folder = wm_fs_choose_folder;
-window.wm_fs_list_images = wm_fs_list_images;
-window.wm_fs_read_image = wm_fs_read_image;
-window.wm_fs_write_text = wm_fs_write_text;
-window.wm_fs_read_text = wm_fs_read_text;
-window.wm_pick_file = wm_pick_file;
-console.log("[wm] local-data-bridge.js: explicit window assignments done");
+window.wmPickFile = wmPickFile;

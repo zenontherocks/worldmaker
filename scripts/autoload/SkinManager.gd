@@ -27,7 +27,7 @@ func load_skin_from_path(path: String) -> void:
 
 
 ## Same as load_skin_from_path, but for raw bytes already in memory (the Web
-## build's LocalDataFolder reads files this way instead of via a real path).
+## build's WebFilePicker reads files this way instead of via a real path).
 func load_skin_from_bytes(bytes: PackedByteArray, filename: String) -> void:
 	var image := Image.new()
 	var extension := filename.get_extension().to_lower()
