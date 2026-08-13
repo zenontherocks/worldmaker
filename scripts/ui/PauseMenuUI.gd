@@ -45,12 +45,22 @@ func _ready() -> void:
 	backdrop.color = Color(0, 0, 0, 0.55)
 	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
 	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	backdrop.gui_input.connect(_on_backdrop_gui_input)
 	add_child(backdrop)
 
+	# CenterContainer re-centers its child every layout pass, based on
+	# whatever that child's actual size turns out to be -- unlike a fixed
+	# anchor preset, which locks in an offset computed from _content's size
+	# at the moment it's called, before any of the buttons below exist to
+	# give it a real size.
+	var centering := CenterContainer.new()
+	centering.set_anchors_preset(Control.PRESET_FULL_RECT)
+	centering.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	backdrop.add_child(centering)
+
 	_content = PanelContainer.new()
-	_content.set_anchors_preset(Control.PRESET_CENTER)
 	_content.custom_minimum_size = Vector2(300, 0)
-	backdrop.add_child(_content)
+	centering.add_child(_content)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 8)
@@ -146,6 +156,17 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			_open()
 		get_viewport().set_input_as_handled()
+
+
+## Buttons and other Controls in _content sit on top of the backdrop and
+## consume their own clicks first, so this only ever fires for a click that
+## landed on the dimmed area outside the panel -- closing the menu is then
+## a genuine click gesture, which is the most reliable way to get the
+## browser to actually grant Pointer Lock back (more reliable than Escape,
+## which carries its own re-lock cooldown after a browser-forced exit).
+func _on_backdrop_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_close()
 
 
 ## Browsers force-exit Pointer Lock on Escape themselves, at the browser
