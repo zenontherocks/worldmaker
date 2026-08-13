@@ -148,6 +148,19 @@ func _unhandled_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
+## Browsers force-exit Pointer Lock on Escape themselves, at the browser
+## level, before/instead of delivering that keypress to the page as a
+## normal key event -- which meant a first Escape only released the mouse
+## (silently, with nothing here ever seeing it) and a second Escape was
+## needed to actually open the menu. Watching mouse_mode directly instead
+## of only reacting to the action catches that release however it
+## happened, so releasing the mouse and opening the menu become the same
+## single keypress from the player's perspective.
+func _process(_delta: float) -> void:
+	if not _paused and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		_open()
+
+
 func _open() -> void:
 	_paused = true
 	visible = true
