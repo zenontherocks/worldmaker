@@ -4,9 +4,12 @@ extends Node
 ## browsers cannot write to an arbitrary OS path: desktop exports write
 ## straight to disk, HTML5 exports trigger a browser download instead.
 ##
-## JSON schema (version 1):
+## JSON schema (version 2):
 ## {
-##   "version": 1,
+##   "version": 2,
+##   "skins": {
+##     "concrete.png": "<base64-encoded PNG/JPG bytes>"
+##   },
 ##   "objects": [
 ##     {
 ##       "id": 1,
@@ -14,21 +17,33 @@ extends Node
 ##       "dimensions": {"width":1.0, "height":1.0, "depth":1.0},
 ##       "position": [x, y, z],
 ##       "rotation": [x, y, z],       # radians
-##       "skin": "concrete.png"       # SkinManager cache key, "" if none
+##       "skin": "concrete.png"       # key into "skins" above, "" if none
 ##     }
 ##   ]
 ## }
+##
+## Skin images are embedded directly in the world file rather than just
+## referenced by name -- there's deliberately no server anywhere in this
+## project to re-fetch them from (see SkinManager's docstring), so a name-
+## only reference would only resolve for as long as SkinManager's
+## in-memory, session-only cache happens to still hold that image. A v1
+## file (no "skins" key) still loads fine, it just places any skinned
+## objects unskinned, exactly like it always did.
 
-const SAVE_VERSION: int = 1
+const SAVE_VERSION: int = 2
 
 
 func export_world_to_json() -> String:
 	var objects := []
+	var skins := {}
 	if GameManager.world_root:
 		for child in GameManager.world_root.get_children():
 			if child is PlaceableObject:
 				objects.append(child.to_dict())
-	var data := {"version": SAVE_VERSION, "objects": objects}
+				var skin_key: String = child.skin_key
+				if skin_key != "" and not skins.has(skin_key) and SkinManager.has_skin(skin_key):
+					skins[skin_key] = Marshalls.raw_to_base64(SkinManager.get_bytes(skin_key))
+	var data := {"version": SAVE_VERSION, "skins": skins, "objects": objects}
 	return JSON.stringify(data, "\t")
 
 
@@ -67,6 +82,11 @@ func load_from_json_text(text: String) -> bool:
 	if typeof(parsed) != TYPE_DICTIONARY or not parsed.has("objects"):
 		push_warning("SaveLoadManager: malformed world JSON")
 		return false
+
+	var skins = parsed.get("skins", {})
+	if typeof(skins) == TYPE_DICTIONARY:
+		for skin_key in skins:
+			SkinManager.load_skin_from_bytes(Marshalls.base64_to_raw(skins[skin_key]), skin_key)
 
 	_clear_world()
 	for object_data in parsed["objects"]:

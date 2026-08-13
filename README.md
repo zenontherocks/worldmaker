@@ -279,14 +279,18 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   `FileDialog`s) opts in to `PROCESS_MODE_ALWAYS` so its buttons and
   `WebFilePicker`'s poll keep working while paused.
 
-- **Skins are referenced by name, not embedded.** A placed object stores the
-  skin's file name (`skin_key`) in the JSON, not the image itself, keeping
-  world files small. The trade-off: reloading a world before that image has
-  been imported this session (e.g. a fresh page load) will place the
-  object with the default material until the matching file is imported
-  again. This is a deliberate scope boundary for a "lightweight,
-  local-first" project — embedding base64 image data in the JSON would be
-  the straightforward extension if that's ever a problem.
+- **Skins are embedded in the world file, keyed by name.** A placed object
+  stores its skin's file name (`skin_key`) in `"objects"`, and
+  `SaveLoadManager` separately writes each unique skin actually in use into
+  a top-level `"skins": {name: base64}` dict (see its docstring for the
+  full schema) — `SkinManager` keeps the original bytes cached alongside
+  the decoded texture for exactly this. There's deliberately no server
+  anywhere in this project to re-fetch images from later, so a name-only
+  reference would only resolve for as long as a session's in-memory skin
+  cache happened to still hold that image; embedding is what makes a saved
+  world's skins actually survive a reload. Older (version 1) world files
+  without a `"skins"` key still load fine, just unskinned, same as before
+  this was added.
 
 - **UI buttons opt out of keyboard focus.** Every procedurally-built
   `Button` sets `focus_mode = Control.FOCUS_NONE`. Godot's built-in
