@@ -120,6 +120,12 @@ func _ready() -> void:
 		WebFilePicker.file_picked.connect(_on_web_file_picked)
 		WebFilePicker.file_pick_failed.connect(_on_web_file_pick_failed)
 
+	# Start paused rather than "live": browsers require a real user gesture
+	# before Pointer Lock actually engages, so the mouse isn't genuinely
+	# captured on load regardless -- opening here matches that reality, and
+	# the Resume click doubles as the gesture that lets capture succeed.
+	_open()
+
 
 func _make_file_dialog(mode: FileDialog.FileMode, filters: PackedStringArray) -> FileDialog:
 	var dialog := FileDialog.new()
