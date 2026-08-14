@@ -81,7 +81,7 @@ func _refresh() -> void:
 		BuildModeController.ToolMode.ROTATE:
 			_label.text = (
 				"BUILD MODE  |  Tool: Rotate (%d/%d)\n" % [_slot_number, _slot_count]
-				+ "[R]/[Shift+R] rotate targeted block  [E] change tool  [B] exit"
+				+ "[R]/[Shift+R] rotate horizontally  [T]/[Shift+T] tilt vertically  [E] change tool  [B] exit"
 			)
 		_:
 			var parts := PackedStringArray()

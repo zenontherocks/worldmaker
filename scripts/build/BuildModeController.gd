@@ -159,6 +159,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		_rotate(rotation_step_degrees)
 	elif event.is_action_pressed("build_rotate_ccw"):
 		_rotate(-rotation_step_degrees)
+	elif event.is_action_pressed("build_tilt_cw"):
+		_tilt(rotation_step_degrees)
+	elif event.is_action_pressed("build_tilt_ccw"):
+		_tilt(-rotation_step_degrees)
 	elif event.is_action_pressed("build_place"):
 		_confirm()
 
@@ -213,6 +217,9 @@ func _adjust_active_field(direction: float) -> void:
 	dimensions_changed.emit(current_dimensions)
 
 
+## R/Shift+R: spins the horizontal facing -- a pending placement's offset in
+## Place mode, or the targeted object's own Y rotation directly in Rotate
+## mode.
 func _rotate(delta_degrees: float) -> void:
 	match tool_mode:
 		ToolMode.PLACE:
@@ -222,6 +229,16 @@ func _rotate(delta_degrees: float) -> void:
 				_highlighted_object.rotation.y = wrapf(
 					_highlighted_object.rotation.y + deg_to_rad(delta_degrees), 0.0, TAU
 				)
+
+
+## T/Shift+T: tips the targeted object around a horizontal axis instead
+## (e.g. standing a cylinder up vs. laying it on its side). Rotate-tool
+## only -- there's no equivalent for a pending placement.
+func _tilt(delta_degrees: float) -> void:
+	if tool_mode == ToolMode.ROTATE and _highlighted_object != null and is_instance_valid(_highlighted_object):
+		_highlighted_object.rotation.x = wrapf(
+			_highlighted_object.rotation.x + deg_to_rad(delta_degrees), 0.0, TAU
+		)
 
 
 func _active_dimension_key() -> String:

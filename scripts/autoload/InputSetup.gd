@@ -49,6 +49,21 @@ func _ready() -> void:
 	rotate_ccw.shift_pressed = true
 	_add_event_if_missing("build_rotate_ccw", rotate_ccw)
 
+	# Vertical tilt (Rotate tool only): R/Shift+R above spins an object
+	# around the vertical axis (which way it faces); T/Shift+T tips it
+	# around a horizontal axis instead (e.g. standing a cylinder up vs.
+	# laying it on its side).
+	_ensure_action("build_tilt_cw")
+	var tilt_cw := InputEventKey.new()
+	tilt_cw.keycode = KEY_T
+	_add_event_if_missing("build_tilt_cw", tilt_cw)
+
+	_ensure_action("build_tilt_ccw")
+	var tilt_ccw := InputEventKey.new()
+	tilt_ccw.keycode = KEY_T
+	tilt_ccw.shift_pressed = true
+	_add_event_if_missing("build_tilt_ccw", tilt_ccw)
+
 	for action_name in MOUSE_BINDINGS.keys():
 		_ensure_action(action_name)
 		var ev := InputEventMouseButton.new()

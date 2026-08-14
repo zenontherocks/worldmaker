@@ -76,7 +76,8 @@ small autoload services.
    | `build_cycle_shape` | E | Cycle Box → Plane → Cylinder → Cone → Sphere → Delete → Rotate |
    | `build_cycle_dimension` | Q | Select which dimension the scroll wheel edits |
    | `build_dimension_increase` / `build_dimension_decrease` | Mouse wheel up/down | Adjust the active dimension |
-   | `build_rotate_cw` / `build_rotate_ccw` | R / Shift+R | Rotate the ghost/placement 15° around Y |
+   | `build_rotate_cw` / `build_rotate_ccw` | R / Shift+R | Rotate 15° around Y (horizontal facing) |
+   | `build_tilt_cw` / `build_tilt_ccw` | T / Shift+T | Tilt 15° around X (Rotate tool only) |
    | `build_place` | Left click | Place the current shape |
 
 5. `Main.tscn` is already set as the main scene
@@ -91,9 +92,10 @@ to rotate, left-click to place. New placements face the same direction
 you're currently facing (nudge further with **R**/**Shift+R** before
 placing). **E** also cycles past the five shapes into two more tools:
 **Delete** (aim at a placed block, left-click to remove it) and **Rotate**
-(aim at a placed block, **R**/**Shift+R** to spin it in place) — both
-highlight whatever block is currently targeted. Press **Esc** to open the
-pause menu and import a skin or export/import a world JSON file.
+(aim at a placed block; **R**/**Shift+R** spins it horizontally,
+**T**/**Shift+T** tilts it vertically) — both highlight whatever block is
+currently targeted. Press **Esc** to open the pause menu and import a skin
+or export/import a world JSON file.
 
 In the editor (and any desktop export) the pause menu always uses ordinary
 native file dialogs — real OS file pickers reading/writing the actual
