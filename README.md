@@ -73,7 +73,7 @@ small autoload services.
    | `jump` | Space | Jump |
    | `toggle_pause_menu` | Esc | Open/close the pause menu (pauses the game, releases the mouse) |
    | `build_mode_toggle` | B | Enter/exit Build Mode |
-   | `build_cycle_shape` | E | Cycle Box → Plane → Cylinder → Cone → Sphere |
+   | `build_cycle_shape` | E | Cycle Box → Plane → Cylinder → Cone → Sphere → Delete → Rotate |
    | `build_cycle_dimension` | Q | Select which dimension the scroll wheel edits |
    | `build_dimension_increase` / `build_dimension_decrease` | Mouse wheel up/down | Adjust the active dimension |
    | `build_rotate_cw` / `build_rotate_ccw` | R / Shift+R | Rotate the ghost/placement 15° around Y |
@@ -86,9 +86,14 @@ small autoload services.
 
 Press **F5** (or the Play button) in the editor. You should spawn standing
 on a green ground plane. Walk with WASD, look with the mouse, press **B** to
-enter Build Mode, **E** to pick a shape, scroll to resize, **R**/**Shift+R**
-to rotate, left-click to place. Press **Esc** to open the pause menu and
-import a skin or export/import a world JSON file.
+enter Build Mode, **E** to pick a tool, scroll to resize, **R**/**Shift+R**
+to rotate, left-click to place. New placements face the same direction
+you're currently facing (nudge further with **R**/**Shift+R** before
+placing). **E** also cycles past the five shapes into two more tools:
+**Delete** (aim at a placed block, left-click to remove it) and **Rotate**
+(aim at a placed block, **R**/**Shift+R** to spin it in place) — both
+highlight whatever block is currently targeted. Press **Esc** to open the
+pause menu and import a skin or export/import a world JSON file.
 
 In the editor (and any desktop export) the pause menu always uses ordinary
 native file dialogs — real OS file pickers reading/writing the actual
@@ -198,9 +203,9 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   matches where the player is looking) but only depends on `ShapeFactory`,
   `ShapeDefinitions`, `SkinManager`, and `GameManager` — never on
   `PlayerController` or the UI directly. It communicates outward purely via
-  four signals (`build_mode_changed`, `shape_changed`, `dimensions_changed`,
-  `active_field_changed`); `Main.gd` is the only place those signals get
-  connected to the HUD.
+  five signals (`build_mode_changed`, `shape_changed`, `dimensions_changed`,
+  `active_field_changed`, `tool_mode_changed`); `Main.gd` is the only place
+  those signals get connected to the HUD.
 
 - **`GhostPreview` is visual-only.** It knows how to show a translucent
   shape and flip valid/invalid tinting, and nothing about raycasting or
@@ -317,10 +322,11 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
 - **New shape:** add an entry to `ShapeDefinitions.DEFS`, add a `match`
   branch in `ShapeFactory.build_mesh` / `build_collision_shape` /
   `vertical_offset`.
-- **Deleting placed objects:** not implemented (out of scope for this
-  foundation). A natural next step is a `build_delete` action in
-  `InputSetup.gd` and a second raycast check in `BuildModeController`
-  against `GameManager.world_root`'s children.
+- **Deleting/rotating placed objects:** implemented as two extra tools in
+  `BuildModeController`'s `[E]` cycle (`ToolMode.DELETE`/`ToolMode.ROTATE`,
+  in `_slots` alongside the five placeable shapes) rather than new input
+  actions -- both target whatever `PlaceableObject` the existing raycast
+  is over and highlight it via a temporary `material_override` swap.
 - **Multiple skins per object (per-face):** would mean giving
   `PlaceableObject` an array of skin keys instead of one, and teaching
   `ShapeFactory` to build a `MeshInstance3D` with per-surface materials.

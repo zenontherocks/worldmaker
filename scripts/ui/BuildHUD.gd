@@ -1,17 +1,19 @@
 extends Control
 class_name BuildHUD
-## Always-on-screen build status readout (bottom of screen): current shape,
-## live dimension values with the scroll-adjustable field marked, and a
-## control reminder. Built procedurally because the set of dimension
-## fields differs per shape and is driven entirely by ShapeDefinitions.
-## Purely a signal listener -- BuildModeController never references it
-## directly, Main.gd wires the connection.
+## Always-on-screen build status readout (bottom of screen): current tool
+## (a shape to place, or the Delete/Rotate tool), live dimension values with
+## the scroll-adjustable field marked, and a control reminder. Built
+## procedurally because the set of dimension fields differs per shape and is
+## driven entirely by ShapeDefinitions. Purely a signal listener --
+## BuildModeController never references it directly, Main.gd wires the
+## connection.
 
 var _label: Label
 
+var _tool_mode: int = BuildModeController.ToolMode.PLACE
+var _slot_number: int = 1
+var _slot_count: int = 1
 var _shape_name: String = ""
-var _shape_number: int = 1
-var _shape_count: int = ShapeDefinitions.ORDER.size()
 var _dimensions: Dictionary = {}
 var _active_field: String = ""
 var _build_active: bool = false
@@ -44,7 +46,6 @@ func on_build_mode_changed(is_active: bool) -> void:
 
 func on_shape_changed(shape_id: int, dimensions: Dictionary) -> void:
 	_shape_name = ShapeDefinitions.shape_name(shape_id)
-	_shape_number = ShapeDefinitions.ORDER.find(shape_id) + 1
 	_dimensions = dimensions
 	_refresh()
 
@@ -59,18 +60,37 @@ func on_active_field_changed(field_key: String) -> void:
 	_refresh()
 
 
+func on_tool_mode_changed(mode: int, slot_number: int, slot_count: int) -> void:
+	_tool_mode = mode
+	_slot_number = slot_number
+	_slot_count = slot_count
+	_refresh()
+
+
 func _refresh() -> void:
 	if not _build_active:
 		_label.text = "Press [B] to enter Build Mode"
 		return
 
-	var parts := PackedStringArray()
-	for key in _dimensions.keys():
-		var marker := ">" if key == _active_field else ""
-		parts.append("%s%s=%.2f" % [marker, key, _dimensions[key]])
+	match _tool_mode:
+		BuildModeController.ToolMode.DELETE:
+			_label.text = (
+				"BUILD MODE  |  Tool: Delete (%d/%d)\n" % [_slot_number, _slot_count]
+				+ "[Click] delete targeted block  [E] change tool  [B] exit"
+			)
+		BuildModeController.ToolMode.ROTATE:
+			_label.text = (
+				"BUILD MODE  |  Tool: Rotate (%d/%d)\n" % [_slot_number, _slot_count]
+				+ "[R]/[Shift+R] rotate targeted block  [E] change tool  [B] exit"
+			)
+		_:
+			var parts := PackedStringArray()
+			for key in _dimensions.keys():
+				var marker := ">" if key == _active_field else ""
+				parts.append("%s%s=%.2f" % [marker, key, _dimensions[key]])
 
-	_label.text = (
-		"BUILD MODE  |  Shape: %s (%d/%d)  |  %s\n"
-		% [_shape_name, _shape_number, _shape_count, ", ".join(parts)]
-		+ "[E] shape  [Q] field  [wheel] adjust  [R]/[Shift+R] rotate  [Click] place  [B] exit"
-	)
+			_label.text = (
+				"BUILD MODE  |  Shape: %s (%d/%d)  |  %s\n"
+				% [_shape_name, _slot_number, _slot_count, ", ".join(parts)]
+				+ "[E] tool  [Q] field  [wheel] adjust  [R]/[Shift+R] rotate  [Click] place  [B] exit"
+			)

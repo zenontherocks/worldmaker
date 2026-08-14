@@ -19,3 +19,4 @@ func _ready() -> void:
 	build_controller.shape_changed.connect(_ui.build_hud.on_shape_changed)
 	build_controller.dimensions_changed.connect(_ui.build_hud.on_dimensions_changed)
 	build_controller.active_field_changed.connect(_ui.build_hud.on_active_field_changed)
+	build_controller.tool_mode_changed.connect(_ui.build_hud.on_tool_mode_changed)
