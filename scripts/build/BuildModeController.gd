@@ -29,14 +29,24 @@ signal active_field_changed(field_key: String)
 signal tool_mode_changed(mode: int, slot_number: int, slot_count: int)
 signal edit_target_changed(shape_id: int, dimensions: Dictionary)
 signal edit_target_cleared
+signal snap_toggled(enabled: bool)
 
 @export var place_range: float = 8.0
 @export var rotation_step_degrees: float = 15.0
 ## Placements snap their horizontal (X/Z) position to a world-space grid of
 ## this size, so shapes line up with each other -- vertical (Y) position is
 ## deliberately left alone, since it's already determined by whatever
-## surface the raycast hit.
+## surface the raycast hit. Only applies to the plain default placement
+## case; wall-mount and Plane-edge-tile snapping (see
+## _process_place_target()) compute their own precise alignment instead.
+## All three are gated together behind snap_enabled ([G] toggles it).
 @export var grid_size: float = 1.0
+
+## [G]. Gates grid-snap, wall-mount auto-orientation, and Plane-edge
+## tiling together as one assist -- the underlying flush surface_offset()
+## (no clipping/floating) always applies regardless, since that's a
+## correctness fix rather than a snapping assist.
+var snap_enabled: bool = true
 
 @onready var ray_cast: RayCast3D = get_parent().get_node("RayCast3D")
 @onready var ghost: GhostPreview = $GhostPreview
@@ -68,7 +78,14 @@ var _rotation_offset: float = 0.0
 var _tilt_offset: float = 0.0
 
 var _has_valid_target: bool = false
+## Cached every physics frame by _process_place_target() (whichever of its
+## three cases applied, with _rotation_offset/_tilt_offset already folded
+## in), then just read back by _place_current() -- so the ghost and the
+## final placement can never drift apart, no matter which case computed
+## them.
 var _target_position: Vector3 = Vector3.ZERO
+var _target_yaw: float = 0.0
+var _target_tilt: float = 0.0
 
 var _highlighted_object: PlaceableObject = null
 var _highlighted_original_material: Material = null
@@ -103,6 +120,7 @@ func _ready() -> void:
 	# a HUD that isn't listening yet and shows blank until the player's
 	# first interaction.
 	call_deferred("select_slot", 0)
+	call_deferred("emit_signal", "snap_toggled", snap_enabled)
 
 
 func _make_highlight_material(color: Color) -> StandardMaterial3D:
@@ -122,19 +140,81 @@ func _physics_process(_delta: float) -> void:
 		_process_targeted_object()
 
 
+## Three cases, checked in priority order, each caching _target_position/
+## _target_yaw/_target_tilt for _place_current() to read back verbatim:
+## 1. Snap enabled, placing a Plane, aiming at an already-placed Plane ->
+##    edge-tile flush and coplanar against it (for flooring/walls).
+## 2. Snap enabled, placing a Plane, aiming at a wall-like surface ->
+##    auto-stand it up flush against that wall, facing outward.
+## 3. Otherwise -> the plain default: flush surface_offset() along
+##    whichever face was hit, grid-snapped (X/Z) facing-based placement.
 func _process_place_target() -> void:
 	_has_valid_target = ray_cast.is_colliding()
-	if _has_valid_target:
-		var point: Vector3 = ray_cast.get_collision_point()
-		var normal: Vector3 = ray_cast.get_collision_normal()
-		var offset := ShapeFactory.vertical_offset(current_shape_id, current_dimensions)
-		_target_position = point + normal * offset
+	if not _has_valid_target:
+		ghost.set_valid(false)
+		return
+
+	var point: Vector3 = ray_cast.get_collision_point()
+	var normal: Vector3 = ray_cast.get_collision_normal()
+	var collider := ray_cast.get_collider()
+	var is_plane := current_shape_id == ShapeDefinitions.ShapeType.PLANE
+
+	if snap_enabled and is_plane and collider is PlaceableObject and collider.shape_id == ShapeDefinitions.ShapeType.PLANE:
+		_compute_plane_edge_snap(collider, point)
+	elif snap_enabled and is_plane and absf(normal.y) < 0.5:
+		_compute_wall_mount(point, normal)
+	else:
+		_compute_default_placement(point, normal)
+
+	ghost.set_transform_data(_target_position, _target_yaw, _target_tilt)
+	ghost.set_valid(true)
+
+
+func _compute_default_placement(point: Vector3, normal: Vector3) -> void:
+	var offset := ShapeFactory.surface_offset(current_shape_id, current_dimensions, normal)
+	_target_position = point + normal * offset
+	if snap_enabled:
 		_target_position.x = snappedf(_target_position.x, grid_size)
 		_target_position.z = snappedf(_target_position.z, grid_size)
-		ghost.set_transform_data(_target_position, _current_facing_y() + _rotation_offset, _current_tilt())
-		ghost.set_valid(true)
+	_target_yaw = _current_facing_y() + _rotation_offset
+	_target_tilt = _current_tilt()
+
+
+## Auto-orients a pending Plane flush against a wall-like surface (hit
+## normal more horizontal than vertical) instead of defaulting to lying
+## flat -- R/Shift+R and T/Shift+T still nudge further on top of this.
+func _compute_wall_mount(point: Vector3, normal: Vector3) -> void:
+	var offset := ShapeFactory.surface_offset(current_shape_id, current_dimensions, normal)
+	_target_position = point + normal * offset
+	_target_yaw = atan2(normal.x, normal.z) + _rotation_offset
+	_target_tilt = PI * 0.5 + _tilt_offset
+
+
+## Snaps a pending Plane flush and coplanar against whichever edge of an
+## already-placed target Plane the raycast landed nearest, so Planes tile
+## edge-to-edge into flooring or walls instead of stacking with a gap.
+## Works entirely in the target's own local frame, so it honors however
+## that target is currently oriented (flat, wall-mounted, anything the
+## Rotate tool left it at) without needing to special-case any of that.
+func _compute_plane_edge_snap(target: PlaceableObject, hit_point: Vector3) -> void:
+	var half_width: float = current_dimensions.get("width", 2.0) * 0.5
+	var half_length: float = current_dimensions.get("length", 2.0) * 0.5
+	var target_half_width: float = target.dimensions.get("width", 2.0) * 0.5
+	var target_half_length: float = target.dimensions.get("length", 2.0) * 0.5
+
+	var local_hit: Vector3 = target.to_local(hit_point)
+	var x_ratio := absf(local_hit.x) / target_half_width if target_half_width > 0.0 else 0.0
+	var z_ratio := absf(local_hit.z) / target_half_length if target_half_length > 0.0 else 0.0
+
+	var local_offset := Vector3.ZERO
+	if x_ratio >= z_ratio:
+		local_offset.x = signf(local_hit.x) * (target_half_width + half_width)
 	else:
-		ghost.set_valid(false)
+		local_offset.z = signf(local_hit.z) * (target_half_length + half_length)
+
+	_target_position = target.to_global(local_offset)
+	_target_yaw = target.rotation.y + _rotation_offset
+	_target_tilt = target.rotation.x + _tilt_offset
 
 
 func _process_targeted_object() -> void:
@@ -206,6 +286,9 @@ func _unhandled_input(event: InputEvent) -> void:
 		_tilt(-rotation_step_degrees)
 	elif event.is_action_pressed("build_place"):
 		_confirm()
+	elif event.is_action_pressed("build_toggle_snap"):
+		snap_enabled = not snap_enabled
+		snap_toggled.emit(snap_enabled)
 
 
 func _can_edit_dimensions() -> bool:
@@ -332,8 +415,8 @@ func _place_current() -> void:
 	var material := ghost.build_material_for_placement()
 	var instance := ShapeFactory.create_instance(current_shape_id, current_dimensions, material)
 	instance.position = _target_position
-	instance.rotation.y = _current_facing_y() + _rotation_offset
-	instance.rotation.x = _current_tilt()
+	instance.rotation.y = _target_yaw
+	instance.rotation.x = _target_tilt
 	instance.skin_key = active_skin_key
 	instance.object_id = GameManager.get_next_id()
 

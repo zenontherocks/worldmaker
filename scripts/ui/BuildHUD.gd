@@ -3,13 +3,12 @@ class_name BuildHUD
 ## Always-on-screen build status readout (bottom of screen): current tool
 ## (a shape to place, or the Delete/Rotate/Edit tool), live dimension
 ## values with the scroll-adjustable field marked, and a control reminder.
-## The whole
-## game is build mode (no separate enter/exit toggle), so this always shows
-## live status once the first tool_mode_changed signal arrives. Built
-## procedurally because the set of dimension fields differs per shape and is
-## driven entirely by ShapeDefinitions. Purely a signal listener --
-## BuildModeController never references it directly, Main.gd wires the
-## connection.
+## The whole game is build mode (no separate enter/exit toggle), so this
+## always shows live status once the first tool_mode_changed signal
+## arrives. Built procedurally because the set of dimension fields differs
+## per shape and is driven entirely by ShapeDefinitions. Purely a signal
+## listener -- BuildModeController never references it directly, Main.gd
+## wires the connection.
 
 var _label: Label
 
@@ -27,6 +26,10 @@ var _active_field: String = ""
 ## a pending placement and a locked edit target.
 var _editing: bool = false
 var _edit_shape_name: String = ""
+
+## [G]: grid-snap, wall auto-orient, and Plane-edge tiling all together --
+## only shown on the Place line, since the other tools don't place anything.
+var _snap_enabled: bool = true
 
 
 func _ready() -> void:
@@ -85,6 +88,11 @@ func on_edit_target_cleared() -> void:
 	_refresh()
 
 
+func on_snap_toggled(enabled: bool) -> void:
+	_snap_enabled = enabled
+	_refresh()
+
+
 func _refresh() -> void:
 	match _tool_mode:
 		BuildModeController.ToolMode.DELETE:
@@ -121,5 +129,6 @@ func _refresh() -> void:
 			_label.text = (
 				"Shape: %s (%d/%d)  |  %s\n"
 				% [_shape_name, _slot_number, _slot_count, ", ".join(parts)]
-				+ "[E] tool  [Q] field  [wheel] adjust  [R]/[Shift+R] rotate  [Click] place  [Esc] menu"
+				+ "[E] tool  [Q] field  [wheel] adjust  [R]/[Shift+R] rotate  [Click] place  "
+				+ "[G] snap: %s  [Esc] menu" % ("ON" if _snap_enabled else "OFF")
 			)

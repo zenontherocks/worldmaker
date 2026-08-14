@@ -75,16 +75,29 @@ static func build_collision_shape(shape_id: int, dims: Dictionary, mesh: Mesh) -
 	return BoxShape3D.new()
 
 
-## Vertical distance from a surface hit point to where the shape's origin
-## should sit so it rests on top of the surface instead of clipping into it.
-static func vertical_offset(shape_id: int, dims: Dictionary) -> float:
+## Distance from a hit surface point (along its normal) to where the
+## shape's origin should sit so it rests flush against that surface instead
+## of clipping into it or floating above it -- whichever world axis the
+## normal is dominant in picks the shape's half-extent along that same
+## axis, so this stays correct whether the hit face is a floor, a ceiling,
+## or the side of another object (not just "up", despite the old name).
+static func surface_offset(shape_id: int, dims: Dictionary, normal: Vector3) -> float:
+	var abs_normal := normal.abs()
 	match shape_id:
 		ShapeType.BOX:
-			return dims.get("height", 1.0) * 0.5
+			if abs_normal.x >= abs_normal.y and abs_normal.x >= abs_normal.z:
+				return dims.get("width", 1.0) * 0.5
+			elif abs_normal.z >= abs_normal.y:
+				return dims.get("depth", 1.0) * 0.5
+			else:
+				return dims.get("height", 1.0) * 0.5
 		ShapeType.PLANE:
 			return 0.01
 		ShapeType.CYLINDER, ShapeType.CONE:
-			return dims.get("height", 1.0) * 0.5
+			if abs_normal.y >= abs_normal.x and abs_normal.y >= abs_normal.z:
+				return dims.get("height", 1.0) * 0.5
+			else:
+				return dims.get("radius", 0.5)
 		ShapeType.SPHERE:
 			return dims.get("diameter", 1.0) * 0.5
 	return 0.0

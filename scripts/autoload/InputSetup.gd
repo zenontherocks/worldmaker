@@ -20,6 +20,7 @@ const KEY_BINDINGS := {
 	# it never reaches gameplay input at all -- it's consumed before this.
 	"build_cycle_shape": [KEY_E],
 	"build_cycle_dimension": [KEY_Q],
+	"build_toggle_snap": [KEY_G],
 }
 
 const MOUSE_BINDINGS := {

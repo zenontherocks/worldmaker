@@ -78,6 +78,7 @@ small autoload services.
    | `build_rotate_cw` / `build_rotate_ccw` | R / Shift+R | Rotate 15° around Y (horizontal facing) -- tips a pending Plane vertical instead |
    | `build_tilt_cw` / `build_tilt_ccw` | T / Shift+T | Tilt 15° around X (Rotate tool only) |
    | `build_place` | Left click | Place the current shape |
+   | `build_toggle_snap` | G | Toggle grid-snap + wall/edge surface-snapping together |
 
 5. `Main.tscn` is already set as the main scene
    (`Project > Project Settings > Application > Run > Main Scene`).
@@ -90,13 +91,24 @@ building is the whole game, so you're always in it. Walk with WASD, look
 with the mouse, **E** to pick a tool, scroll to resize, **R**/**Shift+R** to
 rotate, left-click to place. New placements face the same direction you're
 currently facing (nudge further with **R**/**Shift+R** before placing), and
-their horizontal position snaps to a 1-unit grid so shapes line up cleanly
-(`BuildModeController.grid_size`).
-For a Plane specifically, **R**/**Shift+R** tips it vertical instead --
-Plane starts out lying flat, and spinning a flat square around its own
-vertical axis doesn't look any different, so R does the one rotation that
-actually matters for it; horizontal facing already comes from wherever
-you're standing.
+by default (**G** toggles this) placement is smart about surfaces: any
+shape sits flush against whichever face it's touching (not just resting on
+top of flat ground), a pending Plane automatically stands up flush against
+a wall it's aimed at instead of lying flat, and a pending Plane aimed at an
+*already-placed* Plane snaps flush and coplanar against its nearest edge
+instead of stacking on top of it — so Planes can tile edge-to-edge into
+flooring or walls. Away from a Plane-specific surface, horizontal position
+still snaps to a 1-unit grid so shapes line up cleanly
+(`BuildModeController.grid_size`); turning snapping off with **G** falls
+back to plain facing-based placement with no grid/wall/edge assistance
+(still never clipping or floating, just no smart alignment).
+
+For a Plane specifically (when not snapped to a wall or another Plane),
+**R**/**Shift+R** tips it vertical instead of spinning it -- Plane starts
+out lying flat, and spinning a flat square around its own vertical axis
+doesn't look any different, so R does the one rotation that actually
+matters for it; horizontal facing already comes from wherever you're
+standing.
 
 **E** also cycles past the five shapes into three more tools, each of
 which highlights whatever placed block the crosshair is over: **Delete**
@@ -221,19 +233,33 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   `PlayerController` or the UI directly. There's no "enter/exit build mode"
   toggle -- it's the whole game, so it's always running (the pause menu
   stops it for free via `SceneTree.paused`, same as everything else with
-  the default `PROCESS_MODE_PAUSABLE`). It communicates outward via six
+  the default `PROCESS_MODE_PAUSABLE`). It communicates outward via seven
   signals for the HUD (`shape_changed`, `dimensions_changed`,
   `active_field_changed`, `tool_mode_changed`, `edit_target_changed`,
-  `edit_target_cleared`) plus two public methods, `select_slot()`/
-  `select_skin()`, that the pause menu's Tools/Skins rows call directly;
-  `Main.gd` hands the pause menu its `BuildModeController` reference (via
-  `set_build_controller()`) since that one isn't global,
+  `edit_target_cleared`, `snap_toggled`) plus two public methods,
+  `select_slot()`/`select_skin()`, that the pause menu's Tools/Skins rows
+  call directly; `Main.gd` hands the pause menu its `BuildModeController`
+  reference (via `set_build_controller()`) since that one isn't global,
   the same way it connects the HUD's signals.
 
 - **`GhostPreview` is visual-only.** It knows how to show a translucent
   shape and flip valid/invalid tinting, and nothing about raycasting or
   input. That keeps it reusable for a future feature (e.g. a "select/move"
   tool) without editing `BuildModeController`.
+
+- **Placement caches one full result, not just a position.**
+  `_process_place_target()` picks between three cases each physics frame
+  (plain flush placement, Plane-against-a-wall, Plane-against-an-existing-
+  Plane's-edge) and always writes `_target_position`/`_target_yaw`/
+  `_target_tilt` regardless of which one ran, with manual R/Shift+R/T/
+  Shift+T offsets already folded in. `_place_current()` only ever reads
+  those three cached values back -- it never recomputes anything itself --
+  so the ghost preview and the object actually placed can't drift apart no
+  matter which of the three cases produced them. `snap_enabled` ([G])
+  gates the wall/edge cases and grid-snapping together as one on/off
+  assist; the underlying flush `ShapeFactory.surface_offset()` (correct
+  per-axis distance from whichever face was hit, not just "up") is a
+  correctness fix rather than an assist, so it always applies regardless.
 
 - **Procedural UI instead of hand-authored `.tscn` Control trees.** The
   pause menu and HUD are built in code (`PauseMenuUI.gd`,
@@ -349,7 +375,7 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
 
 - **New shape:** add an entry to `ShapeDefinitions.DEFS`, add a `match`
   branch in `ShapeFactory.build_mesh` / `build_collision_shape` /
-  `vertical_offset`.
+  `surface_offset`.
 - **Deleting/rotating/resizing placed objects:** implemented as three extra
   tools in `BuildModeController`'s `[E]` cycle (`ToolMode.DELETE`/
   `ToolMode.ROTATE`/`ToolMode.EDIT`, in `_slots` alongside the five
