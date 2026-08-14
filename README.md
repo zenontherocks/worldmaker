@@ -97,11 +97,14 @@ top of flat ground), a pending Plane automatically stands up flush against
 a wall it's aimed at instead of lying flat, and a pending Plane aimed at an
 *already-placed* Plane snaps flush and coplanar against its nearest edge
 instead of stacking on top of it — so Planes can tile edge-to-edge into
-flooring or walls. Away from a Plane-specific surface, horizontal position
-still snaps to a 1-unit grid so shapes line up cleanly
-(`BuildModeController.grid_size`); turning snapping off with **G** falls
-back to plain facing-based placement with no grid/wall/edge assistance
-(still never clipping or floating, just no smart alignment).
+flooring or walls. Away from a Plane-specific surface, both position and
+facing snap to a grid so shapes actually line up with each other instead
+of just sitting at grid-aligned positions while facing whatever arbitrary
+direction the player happened to be looking: horizontal position snaps to
+a 1-unit grid (`BuildModeController.grid_size`) and yaw snaps to 90°
+(`rotation_snap_degrees`). Turning snapping off with **G** falls back to
+plain facing-based placement with no grid/wall/edge assistance (still
+never clipping or floating, just no smart alignment).
 
 For a Plane specifically (when not snapped to a wall or another Plane),
 **R**/**Shift+R** tips it vertical instead of spinning it -- Plane starts

@@ -41,6 +41,12 @@ signal snap_toggled(enabled: bool)
 ## _process_place_target()) compute their own precise alignment instead.
 ## All three are gated together behind snap_enabled ([G] toggles it).
 @export var grid_size: float = 1.0
+## Placements also snap their yaw to the nearest multiple of this, so
+## grid-snapped shapes actually face a consistent direction instead of
+## whatever continuous angle the player happened to be looking from --
+## grid-aligned position without grid-aligned rotation still left objects
+## facing arbitrary, mismatched directions.
+@export var rotation_snap_degrees: float = 90.0
 
 ## [G]. Gates grid-snap, wall-mount auto-orientation, and Plane-edge
 ## tiling together as one assist -- the underlying flush surface_offset()
@@ -173,20 +179,23 @@ func _process_place_target() -> void:
 func _compute_default_placement(point: Vector3, normal: Vector3) -> void:
 	var offset := ShapeFactory.surface_offset(current_shape_id, current_dimensions, normal)
 	_target_position = point + normal * offset
+	_target_yaw = _current_facing_y() + _rotation_offset
 	if snap_enabled:
 		_target_position.x = snappedf(_target_position.x, grid_size)
 		_target_position.z = snappedf(_target_position.z, grid_size)
-	_target_yaw = _current_facing_y() + _rotation_offset
+		_target_yaw = snappedf(_target_yaw, deg_to_rad(rotation_snap_degrees))
 	_target_tilt = _current_tilt()
 
 
 ## Auto-orients a pending Plane flush against a wall-like surface (hit
 ## normal more horizontal than vertical) instead of defaulting to lying
 ## flat -- R/Shift+R and T/Shift+T still nudge further on top of this.
+## Only ever reached when snap_enabled is already true, so the yaw is
+## always rounded here, same as the default case above.
 func _compute_wall_mount(point: Vector3, normal: Vector3) -> void:
 	var offset := ShapeFactory.surface_offset(current_shape_id, current_dimensions, normal)
 	_target_position = point + normal * offset
-	_target_yaw = atan2(normal.x, normal.z) + _rotation_offset
+	_target_yaw = snappedf(atan2(normal.x, normal.z) + _rotation_offset, deg_to_rad(rotation_snap_degrees))
 	_target_tilt = PI * 0.5 + _tilt_offset
 
 
