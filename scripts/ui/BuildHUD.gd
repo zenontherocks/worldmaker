@@ -2,7 +2,9 @@ extends Control
 class_name BuildHUD
 ## Always-on-screen build status readout (bottom of screen): current tool
 ## (a shape to place, or the Delete/Rotate tool), live dimension values with
-## the scroll-adjustable field marked, and a control reminder. Built
+## the scroll-adjustable field marked, and a control reminder. The whole
+## game is build mode (no separate enter/exit toggle), so this always shows
+## live status once the first tool_mode_changed signal arrives. Built
 ## procedurally because the set of dimension fields differs per shape and is
 ## driven entirely by ShapeDefinitions. Purely a signal listener --
 ## BuildModeController never references it directly, Main.gd wires the
@@ -16,7 +18,6 @@ var _slot_count: int = 1
 var _shape_name: String = ""
 var _dimensions: Dictionary = {}
 var _active_field: String = ""
-var _build_active: bool = false
 
 
 func _ready() -> void:
@@ -36,11 +37,6 @@ func _ready() -> void:
 	_label.add_theme_constant_override("shadow_offset_y", 1)
 	add_child(_label)
 
-	_refresh()
-
-
-func on_build_mode_changed(is_active: bool) -> void:
-	_build_active = is_active
 	_refresh()
 
 
@@ -68,20 +64,16 @@ func on_tool_mode_changed(mode: int, slot_number: int, slot_count: int) -> void:
 
 
 func _refresh() -> void:
-	if not _build_active:
-		_label.text = "Press [B] to enter Build Mode"
-		return
-
 	match _tool_mode:
 		BuildModeController.ToolMode.DELETE:
 			_label.text = (
-				"BUILD MODE  |  Tool: Delete (%d/%d)\n" % [_slot_number, _slot_count]
-				+ "[Click] delete targeted block  [E] change tool  [B] exit"
+				"Tool: Delete (%d/%d)\n" % [_slot_number, _slot_count]
+				+ "[Click] delete targeted block  [E] change tool  [Esc] menu"
 			)
 		BuildModeController.ToolMode.ROTATE:
 			_label.text = (
-				"BUILD MODE  |  Tool: Rotate (%d/%d)\n" % [_slot_number, _slot_count]
-				+ "[R]/[Shift+R] rotate horizontally  [T]/[Shift+T] tilt vertically  [E] change tool  [B] exit"
+				"Tool: Rotate (%d/%d)\n" % [_slot_number, _slot_count]
+				+ "[R]/[Shift+R] rotate horizontally  [T]/[Shift+T] tilt vertically  [E] change tool  [Esc] menu"
 			)
 		_:
 			var parts := PackedStringArray()
@@ -90,7 +82,7 @@ func _refresh() -> void:
 				parts.append("%s%s=%.2f" % [marker, key, _dimensions[key]])
 
 			_label.text = (
-				"BUILD MODE  |  Shape: %s (%d/%d)  |  %s\n"
+				"Shape: %s (%d/%d)  |  %s\n"
 				% [_shape_name, _slot_number, _slot_count, ", ".join(parts)]
-				+ "[E] tool  [Q] field  [wheel] adjust  [R]/[Shift+R] rotate  [Click] place  [B] exit"
+				+ "[E] tool  [Q] field  [wheel] adjust  [R]/[Shift+R] rotate  [Click] place  [Esc] menu"
 			)

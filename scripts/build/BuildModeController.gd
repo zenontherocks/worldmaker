@@ -1,21 +1,26 @@
 extends Node3D
 class_name BuildModeController
-## Owns build-mode state (active tool, live dimensions, rotation, active
-## skin) and orchestrates raycasting + placement. Lives under the player's
-## Camera3D so its raycast always matches the look direction. Talks to the
-## rest of the game only through signals and the ShapeFactory/GameManager/
-## SkinManager services -- it never reaches into the UI directly.
+## Owns build state (active tool, live dimensions, rotation, active skin)
+## and orchestrates raycasting + placement. The whole game is build mode --
+## there's no separate "enter/exit" toggle -- so this is always running
+## (modulo the pause menu, which stops it for free via SceneTree.paused
+## like everything else with the default PROCESS_MODE_PAUSABLE). Lives
+## under the player's Camera3D so its raycast always matches the look
+## direction. Talks to the rest of the game only through signals and the
+## ShapeFactory/GameManager/SkinManager services, plus a handful of public
+## methods (select_slot/select_skin) the pause menu calls directly via the
+## reference Main.gd hands it -- it never reaches into the UI itself.
 ##
 ## [E] cycles through seven tools: the five placeable shapes, then Delete,
-## then Rotate. Delete and Rotate both target whatever placed object the
-## crosshair is over (found via the same raycast used for placement) and
-## highlight it by temporarily swapping its mesh's material; Delete removes
-## it on click, Rotate spins it in place with the same R/Shift+R keys that
-## adjust a pending placement's rotation.
+## then Rotate. The pause menu's Tools row offers the same seven directly,
+## via select_slot(). Delete and Rotate both target whatever placed object
+## the crosshair is over (found via the same raycast used for placement)
+## and highlight it by temporarily swapping its mesh's material; Delete
+## removes it on click, Rotate spins it in place with the same R/Shift+R
+## (and T/Shift+T) keys that adjust a pending placement's rotation.
 
 enum ToolMode { PLACE, DELETE, ROTATE }
 
-signal build_mode_changed(active: bool)
 signal shape_changed(shape_id: int, dimensions: Dictionary)
 signal dimensions_changed(dimensions: Dictionary)
 signal active_field_changed(field_key: String)
@@ -27,10 +32,14 @@ signal tool_mode_changed(mode: int, slot_number: int, slot_count: int)
 @onready var ray_cast: RayCast3D = get_parent().get_node("RayCast3D")
 @onready var ghost: GhostPreview = $GhostPreview
 
-var active: bool = false
 var tool_mode: int = ToolMode.PLACE
 var current_shape_id: int = ShapeDefinitions.ShapeType.BOX
 var current_dimensions: Dictionary = {}
+
+## Which cached SkinManager texture new placements use; "" means the
+## default (unskinned) material. Settable directly by the pause menu's
+## Skins row via select_skin(), not just by importing a new image.
+var active_skin_key: String = ""
 
 var _slots: Array = []
 var _slot_index: int = 0
@@ -44,7 +53,6 @@ var _rotation_offset: float = 0.0
 
 var _has_valid_target: bool = false
 var _target_position: Vector3 = Vector3.ZERO
-var _active_skin_key: String = ""
 
 var _highlighted_object: PlaceableObject = null
 var _highlighted_original_material: Material = null
@@ -65,7 +73,12 @@ func _ready() -> void:
 	_delete_highlight_material = _make_highlight_material(Color(1.0, 0.25, 0.2, 0.6))
 	_rotate_highlight_material = _make_highlight_material(Color(0.25, 0.7, 1.0, 0.6))
 
-	_select_slot(0)
+	# Deferred so its signal emissions land after Main.gd's _ready() (which
+	# runs after all its children's, including this one) has actually
+	# connected them to BuildHUD -- otherwise this initial state emits into
+	# a HUD that isn't listening yet and shows blank until the player's
+	# first interaction.
+	call_deferred("select_slot", 0)
 
 
 func _make_highlight_material(color: Color) -> StandardMaterial3D:
@@ -77,9 +90,6 @@ func _make_highlight_material(color: Color) -> StandardMaterial3D:
 
 
 func _physics_process(_delta: float) -> void:
-	if not active:
-		return
-
 	ray_cast.force_raycast_update()
 
 	if tool_mode == ToolMode.PLACE:
@@ -137,15 +147,8 @@ func _current_facing_y() -> float:
 
 
 func _unhandled_input(event: InputEvent) -> void:
-	if event.is_action_pressed("build_mode_toggle"):
-		_set_active(not active)
-		return
-
-	if not active:
-		return
-
 	if event.is_action_pressed("build_cycle_shape"):
-		_select_slot((_slot_index + 1) % _slots.size())
+		select_slot((_slot_index + 1) % _slots.size())
 	elif event.is_action_pressed("build_cycle_dimension"):
 		if tool_mode == ToolMode.PLACE:
 			_cycle_active_field()
@@ -167,22 +170,16 @@ func _unhandled_input(event: InputEvent) -> void:
 		_confirm()
 
 
-func _set_active(value: bool) -> void:
-	active = value
-	if not active:
-		_clear_highlight()
-	_update_ghost_visibility()
-	build_mode_changed.emit(active)
-
-
 func _update_ghost_visibility() -> void:
-	if active and tool_mode == ToolMode.PLACE:
+	if tool_mode == ToolMode.PLACE:
 		ghost.show_ghost()
 	else:
 		ghost.hide_ghost()
 
 
-func _select_slot(index: int) -> void:
+## Public: called both by [E] cycling above and directly by the pause
+## menu's Tools row buttons (via the reference Main.gd hands it).
+func select_slot(index: int) -> void:
 	_clear_highlight()
 	_slot_index = index
 	var slot: Dictionary = _slots[_slot_index]
@@ -198,6 +195,13 @@ func _select_slot(index: int) -> void:
 
 	_update_ghost_visibility()
 	tool_mode_changed.emit(tool_mode, _slot_index + 1, _slots.size())
+
+
+## Public: called by the pause menu's Skins row. "" selects the default
+## (unskinned) material.
+func select_skin(skin_key: String) -> void:
+	active_skin_key = skin_key
+	ghost.set_skin(SkinManager.get_cached(skin_key) if skin_key != "" else null)
 
 
 func _cycle_active_field() -> void:
@@ -262,7 +266,7 @@ func _place_current() -> void:
 	var instance := ShapeFactory.create_instance(current_shape_id, current_dimensions, material)
 	instance.position = _target_position
 	instance.rotation.y = _current_facing_y() + _rotation_offset
-	instance.skin_key = _active_skin_key
+	instance.skin_key = active_skin_key
 	instance.object_id = GameManager.get_next_id()
 
 	if GameManager.world_root:
@@ -280,4 +284,4 @@ func _delete_targeted() -> void:
 
 func _on_skin_loaded(texture: Texture2D, skin_key: String) -> void:
 	ghost.set_skin(texture)
-	_active_skin_key = skin_key
+	active_skin_key = skin_key

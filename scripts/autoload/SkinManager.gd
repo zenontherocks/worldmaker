@@ -60,3 +60,10 @@ func get_bytes(skin_key: String) -> PackedByteArray:
 
 func has_skin(skin_key: String) -> bool:
 	return _cache.has(skin_key)
+
+
+## All skin keys imported so far this session, for the pause menu's Skins
+## selector -- letting the player switch back to an earlier import instead
+## of only ever using whichever one was imported most recently.
+func skin_keys() -> Array:
+	return _cache.keys()

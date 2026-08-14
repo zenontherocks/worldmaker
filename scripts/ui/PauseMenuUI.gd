@@ -1,15 +1,16 @@
 extends CanvasLayer
 class_name PauseMenuUI
 ## Esc-triggered pause menu: dims the screen, stops gameplay via
-## SceneTree.paused, and holds the only three things worth interrupting play
-## for -- importing a skin image, exporting the world to a file, and
-## importing a world file back in. Talks directly to the SkinManager and
-## SaveLoadManager autoloads (both global services, so routing through
-## Main.gd would just add an extra hop) and never touches
-## BuildModeController or the player directly; pausing the tree is what
-## actually stops them (both have the default PROCESS_MODE_PAUSABLE).
+## SceneTree.paused, and holds everything that isn't a raw movement/aiming
+## action -- picking a shape or the Delete/Rotate tool, picking which
+## imported skin is active, importing a skin image, and exporting/importing
+## the world. Talks directly to the SkinManager and SaveLoadManager
+## autoloads (both global services, so routing through Main.gd would just
+## add an extra hop); Main.gd hands it a BuildModeController reference via
+## set_build_controller() since that one isn't global (it lives under the
+## player's camera).
 ##
-## Two flows, chosen per button, exactly as before:
+## Two flows for the file buttons, chosen per button, exactly as before:
 ## - Web: WebFilePicker opens a plain, unfiltered browser file picker for
 ##   imports; world export triggers a browser download. Godot's own
 ##   FileDialog can't help here -- see WebFilePicker's docstring for why.
@@ -22,6 +23,12 @@ class_name PauseMenuUI
 
 var _paused: bool = false
 var _content: PanelContainer
+var _build_controller: BuildModeController = null
+
+var _tools_row: HFlowContainer
+var _tool_buttons: Array = []  ## [{"button": Button, "slot_index": int}]
+
+var _skins_row: HFlowContainer
 
 ## Visible feedback for the whole import/export flow -- push_warning() alone
 ## isn't enough here, it's a debug-only channel that never shows up anywhere
@@ -34,6 +41,14 @@ var _pending_web_pick: String = ""
 var _skin_dialog: FileDialog
 var _export_dialog: FileDialog
 var _import_dialog: FileDialog
+
+
+## Called once by Main.gd, the only place that knows about both this UI and
+## the player's BuildModeController.
+func set_build_controller(controller: BuildModeController) -> void:
+	_build_controller = controller
+	_refresh_tools_row()
+	_refresh_skins_row()
 
 
 func _ready() -> void:
@@ -59,7 +74,7 @@ func _ready() -> void:
 	backdrop.add_child(centering)
 
 	_content = PanelContainer.new()
-	_content.custom_minimum_size = Vector2(300, 0)
+	_content.custom_minimum_size = Vector2(380, 0)
 	centering.add_child(_content)
 
 	var vbox := VBoxContainer.new()
@@ -77,6 +92,15 @@ func _ready() -> void:
 	resume_button.focus_mode = Control.FOCUS_NONE
 	resume_button.pressed.connect(_close)
 	vbox.add_child(resume_button)
+
+	vbox.add_child(_make_section_label("Tools"))
+	_tools_row = HFlowContainer.new()
+	vbox.add_child(_tools_row)
+	_build_tools_row()
+
+	vbox.add_child(_make_section_label("Skins"))
+	_skins_row = HFlowContainer.new()
+	vbox.add_child(_skins_row)
 
 	var import_skin_button := Button.new()
 	import_skin_button.text = "Import Skin (PNG/JPG)"
@@ -137,6 +161,91 @@ func _ready() -> void:
 	_open()
 
 
+func _make_section_label(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+	return label
+
+
+## Built once (the set of tools never changes); _refresh_tools_row() then
+## just toggles which button is disabled to show the current selection.
+## Slot order mirrors BuildModeController's own _slots construction --
+## the five shapes in ShapeDefinitions.ORDER, then Delete, then Rotate.
+func _build_tools_row() -> void:
+	var index := 0
+	for shape_id in ShapeDefinitions.ORDER:
+		_add_tool_button(ShapeDefinitions.shape_name(shape_id), index)
+		index += 1
+	_add_tool_button("Delete", index)
+	index += 1
+	_add_tool_button("Rotate", index)
+
+
+func _add_tool_button(label: String, slot_index: int) -> void:
+	var button := Button.new()
+	button.text = label
+	button.focus_mode = Control.FOCUS_NONE
+	button.pressed.connect(_on_tool_button_pressed.bind(slot_index))
+	_tools_row.add_child(button)
+	_tool_buttons.append({"button": button, "slot_index": slot_index})
+
+
+func _on_tool_button_pressed(slot_index: int) -> void:
+	if _build_controller:
+		_build_controller.select_slot(slot_index)
+	_refresh_tools_row()
+
+
+func _refresh_tools_row() -> void:
+	if _build_controller == null:
+		return
+	var current_index := _current_slot_index()
+	for entry in _tool_buttons:
+		entry["button"].disabled = entry["slot_index"] == current_index
+
+
+func _current_slot_index() -> int:
+	match _build_controller.tool_mode:
+		BuildModeController.ToolMode.DELETE:
+			return ShapeDefinitions.ORDER.size()
+		BuildModeController.ToolMode.ROTATE:
+			return ShapeDefinitions.ORDER.size() + 1
+		_:
+			return ShapeDefinitions.ORDER.find(_build_controller.current_shape_id)
+
+
+## Rebuilt from scratch each time -- simpler than diffing against
+## SkinManager's cache, and this only ever runs on a menu open or a fresh
+## import, never per-frame.
+func _refresh_skins_row() -> void:
+	for child in _skins_row.get_children():
+		child.queue_free()
+	if _build_controller == null:
+		return
+
+	var none_button := Button.new()
+	none_button.text = "None"
+	none_button.focus_mode = Control.FOCUS_NONE
+	none_button.disabled = _build_controller.active_skin_key == ""
+	none_button.pressed.connect(_on_skin_button_pressed.bind(""))
+	_skins_row.add_child(none_button)
+
+	for skin_key in SkinManager.skin_keys():
+		var button := Button.new()
+		button.text = skin_key
+		button.focus_mode = Control.FOCUS_NONE
+		button.disabled = skin_key == _build_controller.active_skin_key
+		button.pressed.connect(_on_skin_button_pressed.bind(skin_key))
+		_skins_row.add_child(button)
+
+
+func _on_skin_button_pressed(skin_key: String) -> void:
+	if _build_controller:
+		_build_controller.select_skin(skin_key)
+	_refresh_skins_row()
+
+
 func _make_file_dialog(mode: FileDialog.FileMode, filters: PackedStringArray) -> FileDialog:
 	var dialog := FileDialog.new()
 	dialog.process_mode = Node.PROCESS_MODE_ALWAYS
@@ -188,6 +297,8 @@ func _open() -> void:
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	_status_label.text = ""
+	_refresh_tools_row()
+	_refresh_skins_row()
 
 
 func _close() -> void:
@@ -218,6 +329,7 @@ func _on_skin_file_selected(path: String) -> void:
 
 func _on_skin_load_succeeded(_texture: Texture2D, skin_key: String) -> void:
 	_set_status("Skin '%s' applied -- place a shape to use it" % skin_key)
+	_refresh_skins_row()
 
 
 func _on_skin_load_failed(reason: String) -> void:

@@ -72,7 +72,6 @@ small autoload services.
    | `move_forward` / `move_back` / `move_left` / `move_right` | W / S / A / D | Walk |
    | `jump` | Space | Jump |
    | `toggle_pause_menu` | Esc | Open/close the pause menu (pauses the game, releases the mouse) |
-   | `build_mode_toggle` | B | Enter/exit Build Mode |
    | `build_cycle_shape` | E | Cycle Box → Plane → Cylinder → Cone → Sphere → Delete → Rotate |
    | `build_cycle_dimension` | Q | Select which dimension the scroll wheel edits |
    | `build_dimension_increase` / `build_dimension_decrease` | Mouse wheel up/down | Adjust the active dimension |
@@ -86,16 +85,21 @@ small autoload services.
 ## 3. Running locally
 
 Press **F5** (or the Play button) in the editor. You should spawn standing
-on a green ground plane. Walk with WASD, look with the mouse, press **B** to
-enter Build Mode, **E** to pick a tool, scroll to resize, **R**/**Shift+R**
-to rotate, left-click to place. New placements face the same direction
-you're currently facing (nudge further with **R**/**Shift+R** before
-placing). **E** also cycles past the five shapes into two more tools:
-**Delete** (aim at a placed block, left-click to remove it) and **Rotate**
-(aim at a placed block; **R**/**Shift+R** spins it horizontally,
-**T**/**Shift+T** tilts it vertically) — both highlight whatever block is
-currently targeted. Press **Esc** to open the pause menu and import a skin
-or export/import a world JSON file.
+on a green ground plane. There's no separate "enter Build Mode" step —
+building is the whole game, so you're always in it. Walk with WASD, look
+with the mouse, **E** to pick a tool, scroll to resize, **R**/**Shift+R** to
+rotate, left-click to place. New placements face the same direction you're
+currently facing (nudge further with **R**/**Shift+R** before placing).
+**E** also cycles past the five shapes into two more tools: **Delete** (aim
+at a placed block, left-click to remove it) and **Rotate** (aim at a placed
+block; **R**/**Shift+R** spins it horizontally, **T**/**Shift+T** tilts it
+vertically) — both highlight whatever block is currently targeted.
+
+Press **Esc** to open the pause menu, which is also where you can pick a
+shape/Delete/Rotate directly with the cursor (a Tools row mirroring the
+**E** cycle) instead of cycling through them, pick which imported skin is
+active from a Skins row (not just whichever was imported most recently),
+import a new skin, or export/import the whole world as JSON.
 
 In the editor (and any desktop export) the pause menu always uses ordinary
 native file dialogs — real OS file pickers reading/writing the actual
@@ -204,10 +208,16 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   `BuildModeController.gd` lives under the camera (so its raycast always
   matches where the player is looking) but only depends on `ShapeFactory`,
   `ShapeDefinitions`, `SkinManager`, and `GameManager` — never on
-  `PlayerController` or the UI directly. It communicates outward purely via
-  five signals (`build_mode_changed`, `shape_changed`, `dimensions_changed`,
-  `active_field_changed`, `tool_mode_changed`); `Main.gd` is the only place
-  those signals get connected to the HUD.
+  `PlayerController` or the UI directly. There's no "enter/exit build mode"
+  toggle -- it's the whole game, so it's always running (the pause menu
+  stops it for free via `SceneTree.paused`, same as everything else with
+  the default `PROCESS_MODE_PAUSABLE`). It communicates outward via four
+  signals for the HUD (`shape_changed`, `dimensions_changed`,
+  `active_field_changed`, `tool_mode_changed`) plus two public methods,
+  `select_slot()`/`select_skin()`, that the pause menu's Tools/Skins rows
+  call directly; `Main.gd` hands the pause menu its `BuildModeController`
+  reference (via `set_build_controller()`) since that one isn't global,
+  the same way it connects the HUD's signals.
 
 - **`GhostPreview` is visual-only.** It knows how to show a translucent
   shape and flip valid/invalid tinting, and nothing about raycasting or
@@ -284,7 +294,11 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   mode) uses Godot's default `PROCESS_MODE_PAUSABLE`, so it freezes for
   free with no per-script gating needed. The menu itself (and its
   `FileDialog`s) opts in to `PROCESS_MODE_ALWAYS` so its buttons and
-  `WebFilePicker`'s poll keep working while paused.
+  `WebFilePicker`'s poll keep working while paused. Its Tools row is built
+  once from `ShapeDefinitions.ORDER` plus Delete/Rotate and just toggles
+  which button is `disabled` to show the current selection; its Skins row
+  is rebuilt from `SkinManager.skin_keys()` on every open and every fresh
+  import instead, since that list actually grows over a session.
 
 - **Skins are embedded in the world file, keyed by name.** A placed object
   stores its skin's file name (`skin_key`) in `"objects"`, and

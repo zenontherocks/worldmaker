@@ -15,7 +15,6 @@ const KEY_BINDINGS := {
 	"move_right": [KEY_D],
 	"jump": [KEY_SPACE],
 	"toggle_pause_menu": [KEY_ESCAPE],
-	"build_mode_toggle": [KEY_B],
 	# Deliberately not Tab: Godot's Control focus-cycling reserves Tab to move
 	# focus between focusable UI elements (the pause menu's buttons), so
 	# it never reaches gameplay input at all -- it's consumed before this.
