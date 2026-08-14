@@ -114,4 +114,5 @@ static func create_instance(shape_id: int, dims: Dictionary, material: Material 
 	placeable.shape_id = shape_id
 	placeable.dimensions = dims.duplicate()
 	placeable.mesh_instance = mesh_instance
+	placeable.collider = collider
 	return placeable

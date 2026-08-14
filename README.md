@@ -72,10 +72,10 @@ small autoload services.
    | `move_forward` / `move_back` / `move_left` / `move_right` | W / S / A / D | Walk |
    | `jump` | Space | Jump |
    | `toggle_pause_menu` | Esc | Open/close the pause menu (pauses the game, releases the mouse) |
-   | `build_cycle_shape` | E | Cycle Box → Plane → Cylinder → Cone → Sphere → Delete → Rotate |
-   | `build_cycle_dimension` | Q | Select which dimension the scroll wheel edits |
+   | `build_cycle_shape` | E | Cycle Box → Plane → Cylinder → Cone → Sphere → Delete → Rotate → Edit |
+   | `build_cycle_dimension` | Q | Select which dimension the scroll wheel edits (Place, or Edit once locked on) |
    | `build_dimension_increase` / `build_dimension_decrease` | Mouse wheel up/down | Adjust the active dimension |
-   | `build_rotate_cw` / `build_rotate_ccw` | R / Shift+R | Rotate 15° around Y (horizontal facing) |
+   | `build_rotate_cw` / `build_rotate_ccw` | R / Shift+R | Rotate 15° around Y (horizontal facing) -- tips a pending Plane vertical instead |
    | `build_tilt_cw` / `build_tilt_ccw` | T / Shift+T | Tilt 15° around X (Rotate tool only) |
    | `build_place` | Left click | Place the current shape |
 
@@ -92,13 +92,21 @@ rotate, left-click to place. New placements face the same direction you're
 currently facing (nudge further with **R**/**Shift+R** before placing), and
 their horizontal position snaps to a 1-unit grid so shapes line up cleanly
 (`BuildModeController.grid_size`).
-**E** also cycles past the five shapes into two more tools: **Delete** (aim
-at a placed block, left-click to remove it) and **Rotate** (aim at a placed
-block; **R**/**Shift+R** spins it horizontally, **T**/**Shift+T** tilts it
-vertically) — both highlight whatever block is currently targeted.
+For a Plane specifically, **R**/**Shift+R** tips it vertical instead --
+Plane starts out lying flat, and spinning a flat square around its own
+vertical axis doesn't look any different, so R does the one rotation that
+actually matters for it; horizontal facing already comes from wherever
+you're standing.
 
-Press **Esc** to open the pause menu, which is also where you can pick a
-shape/Delete/Rotate directly with the cursor (a Tools row mirroring the
+**E** also cycles past the five shapes into three more tools, each of
+which highlights whatever placed block the crosshair is over: **Delete**
+(left-click removes it), **Rotate** (**R**/**Shift+R** spins it
+horizontally, **T**/**Shift+T** tilts it vertically), and **Edit**
+(left-click locks onto it, then **Q**/wheel resize it live the same way
+Place mode sizes a pending placement -- left-click again to let go of it).
+
+Press **Esc** to open the pause menu, which is also where you can pick any
+of the eight tools directly with the cursor (a Tools row mirroring the
 **E** cycle) instead of cycling through them, pick which imported skin is
 active from a Skins row (not just whichever was imported most recently),
 import a new skin, or export/import the whole world as JSON.
@@ -213,12 +221,13 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   `PlayerController` or the UI directly. There's no "enter/exit build mode"
   toggle -- it's the whole game, so it's always running (the pause menu
   stops it for free via `SceneTree.paused`, same as everything else with
-  the default `PROCESS_MODE_PAUSABLE`). It communicates outward via four
+  the default `PROCESS_MODE_PAUSABLE`). It communicates outward via six
   signals for the HUD (`shape_changed`, `dimensions_changed`,
-  `active_field_changed`, `tool_mode_changed`) plus two public methods,
-  `select_slot()`/`select_skin()`, that the pause menu's Tools/Skins rows
-  call directly; `Main.gd` hands the pause menu its `BuildModeController`
-  reference (via `set_build_controller()`) since that one isn't global,
+  `active_field_changed`, `tool_mode_changed`, `edit_target_changed`,
+  `edit_target_cleared`) plus two public methods, `select_slot()`/
+  `select_skin()`, that the pause menu's Tools/Skins rows call directly;
+  `Main.gd` hands the pause menu its `BuildModeController` reference (via
+  `set_build_controller()`) since that one isn't global,
   the same way it connects the HUD's signals.
 
 - **`GhostPreview` is visual-only.** It knows how to show a translucent
@@ -297,8 +306,9 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   free with no per-script gating needed. The menu itself (and its
   `FileDialog`s) opts in to `PROCESS_MODE_ALWAYS` so its buttons and
   `WebFilePicker`'s poll keep working while paused. Its Tools row is built
-  once from `ShapeDefinitions.ORDER` plus Delete/Rotate and just toggles
-  which button is `disabled` to show the current selection; its Skins row
+  once from `ShapeDefinitions.ORDER` plus Delete/Rotate/Edit and just
+  toggles which button is `disabled` to show the current selection; its
+  Skins row
   is rebuilt from `SkinManager.skin_keys()` on every open and every fresh
   import instead, since that list actually grows over a session.
 
@@ -340,11 +350,16 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
 - **New shape:** add an entry to `ShapeDefinitions.DEFS`, add a `match`
   branch in `ShapeFactory.build_mesh` / `build_collision_shape` /
   `vertical_offset`.
-- **Deleting/rotating placed objects:** implemented as two extra tools in
-  `BuildModeController`'s `[E]` cycle (`ToolMode.DELETE`/`ToolMode.ROTATE`,
-  in `_slots` alongside the five placeable shapes) rather than new input
-  actions -- both target whatever `PlaceableObject` the existing raycast
-  is over and highlight it via a temporary `material_override` swap.
+- **Deleting/rotating/resizing placed objects:** implemented as three extra
+  tools in `BuildModeController`'s `[E]` cycle (`ToolMode.DELETE`/
+  `ToolMode.ROTATE`/`ToolMode.EDIT`, in `_slots` alongside the five
+  placeable shapes) rather than new input actions -- all three target
+  whatever `PlaceableObject` the existing raycast is over and highlight it
+  via a temporary `material_override` swap. Edit additionally locks onto
+  its target on click (`_edit_locked`, so the highlight stops following
+  the crosshair) and reuses the same Q/wheel dimension-editing code path
+  as a pending placement, just writing into `PlaceableObject.
+  rebuild_geometry()` instead of the ghost.
 - **Multiple skins per object (per-face):** would mean giving
   `PlaceableObject` an array of skin keys instead of one, and teaching
   `ShapeFactory` to build a `MeshInstance3D` with per-surface materials.

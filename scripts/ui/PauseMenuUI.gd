@@ -171,7 +171,7 @@ func _make_section_label(text: String) -> Label:
 ## Built once (the set of tools never changes); _refresh_tools_row() then
 ## just toggles which button is disabled to show the current selection.
 ## Slot order mirrors BuildModeController's own _slots construction --
-## the five shapes in ShapeDefinitions.ORDER, then Delete, then Rotate.
+## the five shapes in ShapeDefinitions.ORDER, then Delete, Rotate, Edit.
 func _build_tools_row() -> void:
 	var index := 0
 	for shape_id in ShapeDefinitions.ORDER:
@@ -180,6 +180,8 @@ func _build_tools_row() -> void:
 	_add_tool_button("Delete", index)
 	index += 1
 	_add_tool_button("Rotate", index)
+	index += 1
+	_add_tool_button("Edit", index)
 
 
 func _add_tool_button(label: String, slot_index: int) -> void:
@@ -211,6 +213,8 @@ func _current_slot_index() -> int:
 			return ShapeDefinitions.ORDER.size()
 		BuildModeController.ToolMode.ROTATE:
 			return ShapeDefinitions.ORDER.size() + 1
+		BuildModeController.ToolMode.EDIT:
+			return ShapeDefinitions.ORDER.size() + 2
 		_:
 			return ShapeDefinitions.ORDER.find(_build_controller.current_shape_id)
 

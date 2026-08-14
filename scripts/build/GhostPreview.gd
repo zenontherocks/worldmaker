@@ -46,14 +46,16 @@ func build_material_for_placement() -> StandardMaterial3D:
 
 ## Sets world-space (not local) position/rotation. This node sits under the
 ## player's Camera3D, which pitches as the player looks up/down -- a local
-## rotation.y here would still inherit that pitch from the parent chain, so
+## rotation here would still inherit that pitch from the parent chain, so
 ## the ghost would visibly tilt with the camera while the actually-placed
 ## object (added under the flat, unrotated GameManager.world_root) never
 ## would. global_rotation sidesteps that: it always resolves to exactly
-## this world-space yaw, regardless of the camera's current pitch.
-func set_transform_data(world_position: Vector3, y_rotation: float) -> void:
+## this world-space orientation, regardless of the camera's current pitch.
+## x_tilt is only ever nonzero for a pending Plane placement (see
+## BuildModeController._tilt_offset).
+func set_transform_data(world_position: Vector3, y_rotation: float, x_tilt: float = 0.0) -> void:
 	global_position = world_position
-	global_rotation = Vector3(0.0, y_rotation, 0.0)
+	global_rotation = Vector3(x_tilt, y_rotation, 0.0)
 
 
 func set_valid(is_valid: bool) -> void:

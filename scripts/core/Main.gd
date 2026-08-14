@@ -20,5 +20,7 @@ func _ready() -> void:
 	build_controller.dimensions_changed.connect(_ui.build_hud.on_dimensions_changed)
 	build_controller.active_field_changed.connect(_ui.build_hud.on_active_field_changed)
 	build_controller.tool_mode_changed.connect(_ui.build_hud.on_tool_mode_changed)
+	build_controller.edit_target_changed.connect(_ui.build_hud.on_edit_target_changed)
+	build_controller.edit_target_cleared.connect(_ui.build_hud.on_edit_target_cleared)
 
 	_ui.pause_menu.set_build_controller(build_controller)

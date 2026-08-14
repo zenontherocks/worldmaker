@@ -1,8 +1,9 @@
 extends Control
 class_name BuildHUD
 ## Always-on-screen build status readout (bottom of screen): current tool
-## (a shape to place, or the Delete/Rotate tool), live dimension values with
-## the scroll-adjustable field marked, and a control reminder. The whole
+## (a shape to place, or the Delete/Rotate/Edit tool), live dimension
+## values with the scroll-adjustable field marked, and a control reminder.
+## The whole
 ## game is build mode (no separate enter/exit toggle), so this always shows
 ## live status once the first tool_mode_changed signal arrives. Built
 ## procedurally because the set of dimension fields differs per shape and is
@@ -18,6 +19,14 @@ var _slot_count: int = 1
 var _shape_name: String = ""
 var _dimensions: Dictionary = {}
 var _active_field: String = ""
+
+## Edit tool: whether it's currently locked onto a target (vs. still
+## browsing for one) and that target's shape name. Dimensions/active field
+## while locked are the same _dimensions/_active_field above -- Build
+## ModeController reuses dimensions_changed/active_field_changed for both
+## a pending placement and a locked edit target.
+var _editing: bool = false
+var _edit_shape_name: String = ""
 
 
 func _ready() -> void:
@@ -60,6 +69,19 @@ func on_tool_mode_changed(mode: int, slot_number: int, slot_count: int) -> void:
 	_tool_mode = mode
 	_slot_number = slot_number
 	_slot_count = slot_count
+	_editing = false
+	_refresh()
+
+
+func on_edit_target_changed(shape_id: int, dimensions: Dictionary) -> void:
+	_editing = true
+	_edit_shape_name = ShapeDefinitions.shape_name(shape_id)
+	_dimensions = dimensions
+	_refresh()
+
+
+func on_edit_target_cleared() -> void:
+	_editing = false
 	_refresh()
 
 
@@ -75,6 +97,21 @@ func _refresh() -> void:
 				"Tool: Rotate (%d/%d)\n" % [_slot_number, _slot_count]
 				+ "[R]/[Shift+R] rotate horizontally  [T]/[Shift+T] tilt vertically  [E] change tool  [Esc] menu"
 			)
+		BuildModeController.ToolMode.EDIT:
+			if _editing:
+				var parts := PackedStringArray()
+				for key in _dimensions.keys():
+					var marker := ">" if key == _active_field else ""
+					parts.append("%s%s=%.2f" % [marker, key, _dimensions[key]])
+				_label.text = (
+					"Editing: %s  |  %s\n" % [_edit_shape_name, ", ".join(parts)]
+					+ "[Q] field  [wheel] adjust  [Click] done  [Esc] menu"
+				)
+			else:
+				_label.text = (
+					"Tool: Edit (%d/%d)\n" % [_slot_number, _slot_count]
+					+ "[Click] select targeted block  [E] change tool  [Esc] menu"
+				)
 		_:
 			var parts := PackedStringArray()
 			for key in _dimensions.keys():

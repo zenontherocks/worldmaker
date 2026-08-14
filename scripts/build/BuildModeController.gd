@@ -11,20 +11,24 @@ class_name BuildModeController
 ## methods (select_slot/select_skin) the pause menu calls directly via the
 ## reference Main.gd hands it -- it never reaches into the UI itself.
 ##
-## [E] cycles through seven tools: the five placeable shapes, then Delete,
-## then Rotate. The pause menu's Tools row offers the same seven directly,
-## via select_slot(). Delete and Rotate both target whatever placed object
-## the crosshair is over (found via the same raycast used for placement)
-## and highlight it by temporarily swapping its mesh's material; Delete
-## removes it on click, Rotate spins it in place with the same R/Shift+R
-## (and T/Shift+T) keys that adjust a pending placement's rotation.
+## [E] cycles through eight tools: the five placeable shapes, then Delete,
+## Rotate, and Edit. The pause menu's Tools row offers the same eight
+## directly, via select_slot(). Delete, Rotate, and Edit all target
+## whatever placed object the crosshair is over (found via the same
+## raycast used for placement) and highlight it by temporarily swapping
+## its mesh's material; Delete removes it on click, Rotate spins it in
+## place with the same R/Shift+R (and T/Shift+T) keys that adjust a
+## pending placement's rotation, and Edit locks onto it on click so
+## Q/wheel can resize it live instead of adjusting a pending placement.
 
-enum ToolMode { PLACE, DELETE, ROTATE }
+enum ToolMode { PLACE, DELETE, ROTATE, EDIT }
 
 signal shape_changed(shape_id: int, dimensions: Dictionary)
 signal dimensions_changed(dimensions: Dictionary)
 signal active_field_changed(field_key: String)
 signal tool_mode_changed(mode: int, slot_number: int, slot_count: int)
+signal edit_target_changed(shape_id: int, dimensions: Dictionary)
+signal edit_target_cleared
 
 @export var place_range: float = 8.0
 @export var rotation_step_degrees: float = 15.0
@@ -56,6 +60,13 @@ var _active_field_index: int = 0
 ## further without physically turning to face it.
 var _rotation_offset: float = 0.0
 
+## Same idea, but around a horizontal axis instead -- only meaningful for
+## Plane, whose default orientation lies flat. A Plane's facing is already
+## effectively "set by moving around" (nothing about spinning a flat square
+## around its own vertical axis looks any different), so for Plane
+## specifically R/Shift+R tips it toward standing up vertical instead.
+var _tilt_offset: float = 0.0
+
 var _has_valid_target: bool = false
 var _target_position: Vector3 = Vector3.ZERO
 
@@ -63,6 +74,12 @@ var _highlighted_object: PlaceableObject = null
 var _highlighted_original_material: Material = null
 var _delete_highlight_material: StandardMaterial3D
 var _rotate_highlight_material: StandardMaterial3D
+var _edit_highlight_material: StandardMaterial3D
+
+## True once Edit has locked onto _highlighted_object (a click while
+## browsing); while true, raycasting/re-highlighting stops so the edit
+## target stays fixed regardless of where the crosshair wanders.
+var _edit_locked: bool = false
 
 
 func _ready() -> void:
@@ -74,9 +91,11 @@ func _ready() -> void:
 		_slots.append({"mode": ToolMode.PLACE, "shape_id": shape_id})
 	_slots.append({"mode": ToolMode.DELETE})
 	_slots.append({"mode": ToolMode.ROTATE})
+	_slots.append({"mode": ToolMode.EDIT})
 
 	_delete_highlight_material = _make_highlight_material(Color(1.0, 0.25, 0.2, 0.6))
 	_rotate_highlight_material = _make_highlight_material(Color(0.25, 0.7, 1.0, 0.6))
+	_edit_highlight_material = _make_highlight_material(Color(1.0, 0.85, 0.2, 0.6))
 
 	# Deferred so its signal emissions land after Main.gd's _ready() (which
 	# runs after all its children's, including this one) has actually
@@ -99,7 +118,7 @@ func _physics_process(_delta: float) -> void:
 
 	if tool_mode == ToolMode.PLACE:
 		_process_place_target()
-	else:
+	elif tool_mode != ToolMode.EDIT or not _edit_locked:
 		_process_targeted_object()
 
 
@@ -112,7 +131,7 @@ func _process_place_target() -> void:
 		_target_position = point + normal * offset
 		_target_position.x = snappedf(_target_position.x, grid_size)
 		_target_position.z = snappedf(_target_position.z, grid_size)
-		ghost.set_transform_data(_target_position, _current_facing_y() + _rotation_offset)
+		ghost.set_transform_data(_target_position, _current_facing_y() + _rotation_offset, _current_tilt())
 		ghost.set_valid(true)
 	else:
 		ghost.set_valid(false)
@@ -134,9 +153,17 @@ func _set_highlighted(candidate: PlaceableObject) -> void:
 	if candidate != null and candidate.mesh_instance != null:
 		_highlighted_object = candidate
 		_highlighted_original_material = candidate.mesh_instance.material_override
-		candidate.mesh_instance.material_override = (
-			_delete_highlight_material if tool_mode == ToolMode.DELETE else _rotate_highlight_material
-		)
+		candidate.mesh_instance.material_override = _highlight_material_for(tool_mode)
+
+
+func _highlight_material_for(mode: int) -> StandardMaterial3D:
+	match mode:
+		ToolMode.DELETE:
+			return _delete_highlight_material
+		ToolMode.ROTATE:
+			return _rotate_highlight_material
+		_:
+			return _edit_highlight_material
 
 
 func _clear_highlight() -> void:
@@ -153,17 +180,21 @@ func _current_facing_y() -> float:
 	return get_parent().global_rotation.y
 
 
+func _current_tilt() -> float:
+	return _tilt_offset if current_shape_id == ShapeDefinitions.ShapeType.PLANE else 0.0
+
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("build_cycle_shape"):
 		select_slot((_slot_index + 1) % _slots.size())
 	elif event.is_action_pressed("build_cycle_dimension"):
-		if tool_mode == ToolMode.PLACE:
+		if _can_edit_dimensions():
 			_cycle_active_field()
 	elif event.is_action_pressed("build_dimension_increase"):
-		if tool_mode == ToolMode.PLACE:
+		if _can_edit_dimensions():
 			_adjust_active_field(1.0)
 	elif event.is_action_pressed("build_dimension_decrease"):
-		if tool_mode == ToolMode.PLACE:
+		if _can_edit_dimensions():
 			_adjust_active_field(-1.0)
 	elif event.is_action_pressed("build_rotate_cw"):
 		_rotate(rotation_step_degrees)
@@ -177,6 +208,10 @@ func _unhandled_input(event: InputEvent) -> void:
 		_confirm()
 
 
+func _can_edit_dimensions() -> bool:
+	return tool_mode == ToolMode.PLACE or (tool_mode == ToolMode.EDIT and _edit_locked)
+
+
 func _update_ghost_visibility() -> void:
 	if tool_mode == ToolMode.PLACE:
 		ghost.show_ghost()
@@ -187,6 +222,9 @@ func _update_ghost_visibility() -> void:
 ## Public: called both by [E] cycling above and directly by the pause
 ## menu's Tools row buttons (via the reference Main.gd hands it).
 func select_slot(index: int) -> void:
+	if _edit_locked:
+		_edit_locked = false
+		edit_target_cleared.emit()
 	_clear_highlight()
 	_slot_index = index
 	var slot: Dictionary = _slots[_slot_index]
@@ -211,15 +249,31 @@ func select_skin(skin_key: String) -> void:
 	ghost.set_skin(SkinManager.get_cached(skin_key) if skin_key != "" else null)
 
 
+func _dimension_fields_in_context() -> Array:
+	if tool_mode == ToolMode.EDIT and _edit_locked and _highlighted_object != null:
+		return ShapeDefinitions.dimension_fields(_highlighted_object.shape_id)
+	return ShapeDefinitions.dimension_fields(current_shape_id)
+
+
 func _cycle_active_field() -> void:
-	var fields := ShapeDefinitions.dimension_fields(current_shape_id)
+	var fields := _dimension_fields_in_context()
 	_active_field_index = (_active_field_index + 1) % fields.size()
 	active_field_changed.emit(_active_dimension_key())
 
 
 func _adjust_active_field(direction: float) -> void:
-	var fields := ShapeDefinitions.dimension_fields(current_shape_id)
+	var fields := _dimension_fields_in_context()
 	var field: Dictionary = fields[_active_field_index]
+
+	if tool_mode == ToolMode.EDIT and _edit_locked and _highlighted_object != null:
+		var target := _highlighted_object
+		var new_dims: Dictionary = target.dimensions.duplicate()
+		var new_value: float = new_dims[field["key"]] + field["step"] * direction
+		new_dims[field["key"]] = ShapeDefinitions.clamp_dimension(target.shape_id, field["key"], new_value)
+		target.rebuild_geometry(new_dims)
+		dimensions_changed.emit(target.dimensions)
+		return
+
 	var new_value: float = current_dimensions[field["key"]] + field["step"] * direction
 	current_dimensions[field["key"]] = ShapeDefinitions.clamp_dimension(
 		current_shape_id, field["key"], new_value
@@ -228,13 +282,17 @@ func _adjust_active_field(direction: float) -> void:
 	dimensions_changed.emit(current_dimensions)
 
 
-## R/Shift+R: spins the horizontal facing -- a pending placement's offset in
-## Place mode, or the targeted object's own Y rotation directly in Rotate
-## mode.
+## R/Shift+R: for a pending placement this spins its horizontal facing --
+## except for Plane, whose facing already tracks the player (see
+## _tilt_offset above), so it tips vertical instead. In Rotate mode it
+## spins the targeted object's own Y rotation directly.
 func _rotate(delta_degrees: float) -> void:
 	match tool_mode:
 		ToolMode.PLACE:
-			_rotation_offset = wrapf(_rotation_offset + deg_to_rad(delta_degrees), 0.0, TAU)
+			if current_shape_id == ShapeDefinitions.ShapeType.PLANE:
+				_tilt_offset = wrapf(_tilt_offset + deg_to_rad(delta_degrees), 0.0, TAU)
+			else:
+				_rotation_offset = wrapf(_rotation_offset + deg_to_rad(delta_degrees), 0.0, TAU)
 		ToolMode.ROTATE:
 			if _highlighted_object != null and is_instance_valid(_highlighted_object):
 				_highlighted_object.rotation.y = wrapf(
@@ -253,7 +311,7 @@ func _tilt(delta_degrees: float) -> void:
 
 
 func _active_dimension_key() -> String:
-	var fields := ShapeDefinitions.dimension_fields(current_shape_id)
+	var fields := _dimension_fields_in_context()
 	return fields[_active_field_index]["key"]
 
 
@@ -263,6 +321,8 @@ func _confirm() -> void:
 			_place_current()
 		ToolMode.DELETE:
 			_delete_targeted()
+		ToolMode.EDIT:
+			_toggle_edit_lock()
 
 
 func _place_current() -> void:
@@ -273,6 +333,7 @@ func _place_current() -> void:
 	var instance := ShapeFactory.create_instance(current_shape_id, current_dimensions, material)
 	instance.position = _target_position
 	instance.rotation.y = _current_facing_y() + _rotation_offset
+	instance.rotation.x = _current_tilt()
 	instance.skin_key = active_skin_key
 	instance.object_id = GameManager.get_next_id()
 
@@ -287,6 +348,23 @@ func _delete_targeted() -> void:
 	_highlighted_object = null
 	_highlighted_original_material = null
 	target.queue_free()
+
+
+## First click while browsing (Edit selected, nothing locked yet) locks
+## onto whatever's currently highlighted; a second click anywhere unlocks
+## again, restoring its original material via _clear_highlight().
+func _toggle_edit_lock() -> void:
+	if _edit_locked:
+		_edit_locked = false
+		_clear_highlight()
+		edit_target_cleared.emit()
+		return
+
+	if _highlighted_object != null and is_instance_valid(_highlighted_object):
+		_edit_locked = true
+		_active_field_index = 0
+		edit_target_changed.emit(_highlighted_object.shape_id, _highlighted_object.dimensions)
+		active_field_changed.emit(_active_dimension_key())
 
 
 func _on_skin_loaded(texture: Texture2D, skin_key: String) -> void:
