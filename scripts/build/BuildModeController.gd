@@ -28,6 +28,11 @@ signal tool_mode_changed(mode: int, slot_number: int, slot_count: int)
 
 @export var place_range: float = 8.0
 @export var rotation_step_degrees: float = 15.0
+## Placements snap their horizontal (X/Z) position to a world-space grid of
+## this size, so shapes line up with each other -- vertical (Y) position is
+## deliberately left alone, since it's already determined by whatever
+## surface the raycast hit.
+@export var grid_size: float = 1.0
 
 @onready var ray_cast: RayCast3D = get_parent().get_node("RayCast3D")
 @onready var ghost: GhostPreview = $GhostPreview
@@ -105,6 +110,8 @@ func _process_place_target() -> void:
 		var normal: Vector3 = ray_cast.get_collision_normal()
 		var offset := ShapeFactory.vertical_offset(current_shape_id, current_dimensions)
 		_target_position = point + normal * offset
+		_target_position.x = snappedf(_target_position.x, grid_size)
+		_target_position.z = snappedf(_target_position.z, grid_size)
 		ghost.set_transform_data(_target_position, _current_facing_y() + _rotation_offset)
 		ghost.set_valid(true)
 	else:

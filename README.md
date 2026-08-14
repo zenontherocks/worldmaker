@@ -89,7 +89,9 @@ on a green ground plane. There's no separate "enter Build Mode" step —
 building is the whole game, so you're always in it. Walk with WASD, look
 with the mouse, **E** to pick a tool, scroll to resize, **R**/**Shift+R** to
 rotate, left-click to place. New placements face the same direction you're
-currently facing (nudge further with **R**/**Shift+R** before placing).
+currently facing (nudge further with **R**/**Shift+R** before placing), and
+their horizontal position snaps to a 1-unit grid so shapes line up cleanly
+(`BuildModeController.grid_size`).
 **E** also cycles past the five shapes into two more tools: **Delete** (aim
 at a placed block, left-click to remove it) and **Rotate** (aim at a placed
 block; **R**/**Shift+R** spins it horizontally, **T**/**Shift+T** tilts it
