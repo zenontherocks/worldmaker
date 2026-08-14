@@ -47,6 +47,12 @@ signal snap_toggled(enabled: bool)
 ## grid-aligned position without grid-aligned rotation still left objects
 ## facing arbitrary, mismatched directions.
 @export var rotation_snap_degrees: float = 90.0
+## A pending Plane defaults to standing vertical when the player is looking
+## within this many degrees of level (wall height), and lying flat when
+## looking further up or down than that (floor/ceiling height) -- see
+## _auto_plane_tilt(). R/Shift+R (_tilt_offset) still nudges further on
+## top of whichever this picks.
+@export var level_look_threshold_degrees: float = 45.0
 
 ## [G]. Gates grid-snap, wall-mount auto-orientation, and Plane-edge
 ## tiling together as one assist -- the underlying flush surface_offset()
@@ -201,10 +207,13 @@ func _compute_wall_mount(point: Vector3, normal: Vector3) -> void:
 
 ## Snaps a pending Plane against whichever edge of an already-placed target
 ## Plane the raycast landed nearest, so Planes can either tile edge-to-edge
-## (flush and coplanar with the target, the default) or stand up as a
-## hinge rising from that edge (once R/Shift+R has tilted the pending
-## Plane past 45 degrees) -- e.g. a wall rising from the edge of a floor
-## tile. Works entirely in the target's own local frame, so it honors
+## (flush and coplanar with the target) or stand up as a hinge rising from
+## that edge -- e.g. a wall rising from the edge of a floor tile. Which of
+## the two happens defaults to the same look-direction auto-detection as a
+## targetless placement (_auto_plane_tilt()): aiming roughly level picks
+## standing, aiming down/up picks coplanar, matching the target's own
+## orientation -- R/Shift+R still nudges the choice either way on top of
+## that. Works entirely in the target's own local frame, so it honors
 ## however that target is currently oriented (flat, wall-mounted, anything
 ## the Rotate tool left it at) without needing to special-case any of that.
 func _compute_plane_edge_snap(target: PlaceableObject, hit_point: Vector3) -> void:
@@ -213,15 +222,21 @@ func _compute_plane_edge_snap(target: PlaceableObject, hit_point: Vector3) -> vo
 	var target_half_width: float = target.dimensions.get("width", 2.0) * 0.5
 	var target_half_length: float = target.dimensions.get("length", 2.0) * 0.5
 
-	# "Standing" means relative to the target, not in absolute world terms
-	# -- checking _tilt_offset alone (not target.rotation.x + _tilt_offset)
-	# is what makes this work correctly whether the target itself is a
-	# flat floor tile or an already-vertical wall panel. Coplanar (no
-	# manual tilt) always means "same orientation as the target": for a
-	# floor target that's flat tiling; for a wall target that's tiling
-	# more wall panels sideways to build a longer wall, which needs to
-	# keep working for actual buildings to be buildable.
-	var standing := absf(wrapf(_tilt_offset, -PI, PI)) > PI * 0.25
+	# "Standing" is evaluated relative to the target, not in absolute world
+	# terms -- comparing the desired tilt against the target's own rotation
+	# (not just against a fixed 0) is what makes this work correctly
+	# whether the target itself is a flat floor tile or an already-vertical
+	# wall panel. Coplanar (desired tilt matches the target's) always means
+	# "same orientation as the target": for a floor target that's flat
+	# tiling; for a wall target that's tiling more wall panels sideways to
+	# build a longer wall, which needs to keep working for actual buildings
+	# to be buildable. Snapping the result to exactly coplanar or exactly a
+	# right angle (rather than using the desired tilt's precise value)
+	# keeps every tiled edge genuinely flush, not just close.
+	var desired_tilt := _auto_plane_tilt() + _tilt_offset
+	var relative_tilt := wrapf(desired_tilt - target.rotation.x, -PI, PI)
+	var standing := absf(relative_tilt) > PI * 0.25
+	var hinge_sign := -1.0 if relative_tilt < 0.0 else 1.0
 
 	var local_hit: Vector3 = target.to_local(hit_point)
 	var x_ratio := absf(local_hit.x) / target_half_width if target_half_width > 0.0 else 0.0
@@ -242,7 +257,7 @@ func _compute_plane_edge_snap(target: PlaceableObject, hit_point: Vector3) -> vo
 
 	_target_position = target.to_global(local_offset)
 	_target_yaw = target.rotation.y + _rotation_offset
-	_target_tilt = target.rotation.x + _tilt_offset
+	_target_tilt = target.rotation.x + (hinge_sign * PI * 0.5 if standing else 0.0)
 
 
 func _process_targeted_object() -> void:
@@ -289,7 +304,20 @@ func _current_facing_y() -> float:
 
 
 func _current_tilt() -> float:
-	return _tilt_offset if current_shape_id == ShapeDefinitions.ShapeType.PLANE else 0.0
+	if current_shape_id != ShapeDefinitions.ShapeType.PLANE:
+		return 0.0
+	return _auto_plane_tilt() + _tilt_offset
+
+
+## Standing (PI/2) when the player is looking roughly level -- at "wall
+## height", where a vertical Plane is almost always what's wanted -- and
+## flat (0) when looking distinctly up or down instead, at floor/ceiling
+## height. Camera3D only ever pitches (yaw is on the player body -- see
+## PlayerCamera.gd), so its own local rotation.x is the pitch directly.
+func _auto_plane_tilt() -> float:
+	var pitch: float = get_parent().rotation.x
+	var looking_level := absf(pitch) < deg_to_rad(level_look_threshold_degrees)
+	return PI * 0.5 if looking_level else 0.0
 
 
 func _unhandled_input(event: InputEvent) -> void:

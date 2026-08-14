@@ -96,14 +96,24 @@ shape sits flush against whichever face it's touching (not just resting on
 top of flat ground), a pending Plane automatically stands up flush against
 a wall it's aimed at instead of lying flat, and a pending Plane aimed at an
 *already-placed* Plane snaps flush against its nearest edge instead of
-stacking on top of it. By default (no manual tilt) it matches the
-target's own orientation exactly, so Planes tile edge-to-edge into
-flooring or walls made of multiple panels — including tiling more wall
-panels sideways off an *already-vertical* wall to build a longer one.
-Tilting the pending Plane with **R**/**Shift+R** past 45° away from the
-target's orientation instead hinges it up at that edge — e.g. a wall
-rising from a floor tile's border — which is how actual buildings (floor
-+ walls) get built from Planes.
+stacking on top of it.
+
+A pending Plane's default orientation (before **R**/**Shift+R**) always
+comes from where the camera is currently pointed, not a fixed rule: aimed
+roughly level (within `level_look_threshold_degrees`, 45° by default) it
+defaults to standing vertical -- "I'm looking at wall height, I want a
+wall" -- and aimed distinctly up or down instead it defaults to lying flat
+-- "I'm looking at floor/ceiling height." Aiming at an *already-placed*
+Plane's edge keeps that same rule, just relative to the target's own
+orientation instead of absolute: looking level always produces a
+*vertical* result (hinging a wall up from a floor tile's edge, or tiling
+another panel sideways to extend an already-vertical wall into a longer
+one -- both "give me a wall"), and looking distinctly up/down always
+produces a *horizontal* result (tiling a floor flat, or capping a wall's
+edge with a horizontal piece -- both "give me a floor/ceiling"). **R**/
+**Shift+R** always nudges further on top of whichever default this picks.
+This is how actual buildings (a floor, walls rising from its edges, walls
+extended into longer walls) get built out of Planes.
 
 Away from a Plane-specific surface, both position and facing snap to a
 grid so shapes actually line up with each other instead of just sitting
@@ -116,11 +126,11 @@ never clipping or floating, just no smart alignment). A small dot at the
 center of the screen always shows exactly where the camera is pointing.
 
 For a Plane specifically (when not snapped to a wall or another Plane),
-**R**/**Shift+R** tips it vertical instead of spinning it -- Plane starts
-out lying flat, and spinning a flat square around its own vertical axis
-doesn't look any different, so R does the one rotation that actually
-matters for it; horizontal facing already comes from wherever you're
-standing.
+**R**/**Shift+R** tips it further instead of spinning it -- spinning a
+flat square around its own vertical axis doesn't look any different, so R
+does the one rotation that actually matters for it; horizontal facing
+already comes from wherever you're standing, and its base tilt already
+comes from wherever you're looking (see above).
 
 **E** also cycles past the five shapes into three more tools, each of
 which highlights whatever placed block the crosshair is over: **Delete**
