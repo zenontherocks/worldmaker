@@ -199,17 +199,29 @@ func _compute_wall_mount(point: Vector3, normal: Vector3) -> void:
 	_target_tilt = PI * 0.5 + _tilt_offset
 
 
-## Snaps a pending Plane flush and coplanar against whichever edge of an
-## already-placed target Plane the raycast landed nearest, so Planes tile
-## edge-to-edge into flooring or walls instead of stacking with a gap.
-## Works entirely in the target's own local frame, so it honors however
-## that target is currently oriented (flat, wall-mounted, anything the
-## Rotate tool left it at) without needing to special-case any of that.
+## Snaps a pending Plane against whichever edge of an already-placed target
+## Plane the raycast landed nearest, so Planes can either tile edge-to-edge
+## (flush and coplanar with the target, the default) or stand up as a
+## hinge rising from that edge (once R/Shift+R has tilted the pending
+## Plane past 45 degrees) -- e.g. a wall rising from the edge of a floor
+## tile. Works entirely in the target's own local frame, so it honors
+## however that target is currently oriented (flat, wall-mounted, anything
+## the Rotate tool left it at) without needing to special-case any of that.
 func _compute_plane_edge_snap(target: PlaceableObject, hit_point: Vector3) -> void:
 	var half_width: float = current_dimensions.get("width", 2.0) * 0.5
 	var half_length: float = current_dimensions.get("length", 2.0) * 0.5
 	var target_half_width: float = target.dimensions.get("width", 2.0) * 0.5
 	var target_half_length: float = target.dimensions.get("length", 2.0) * 0.5
+
+	# "Standing" means relative to the target, not in absolute world terms
+	# -- checking _tilt_offset alone (not target.rotation.x + _tilt_offset)
+	# is what makes this work correctly whether the target itself is a
+	# flat floor tile or an already-vertical wall panel. Coplanar (no
+	# manual tilt) always means "same orientation as the target": for a
+	# floor target that's flat tiling; for a wall target that's tiling
+	# more wall panels sideways to build a longer wall, which needs to
+	# keep working for actual buildings to be buildable.
+	var standing := absf(wrapf(_tilt_offset, -PI, PI)) > PI * 0.25
 
 	var local_hit: Vector3 = target.to_local(hit_point)
 	var x_ratio := absf(local_hit.x) / target_half_width if target_half_width > 0.0 else 0.0
@@ -217,9 +229,16 @@ func _compute_plane_edge_snap(target: PlaceableObject, hit_point: Vector3) -> vo
 
 	var local_offset := Vector3.ZERO
 	if x_ratio >= z_ratio:
-		local_offset.x = signf(local_hit.x) * (target_half_width + half_width)
+		local_offset.x = signf(local_hit.x) * (target_half_width + (0.0 if standing else half_width))
 	else:
-		local_offset.z = signf(local_hit.z) * (target_half_length + half_length)
+		local_offset.z = signf(local_hit.z) * (target_half_length + (0.0 if standing else half_length))
+	if standing:
+		# Tilting ~90 degrees around local X turns the new Plane's own
+		# "length" dimension into its vertical extent (same fact the
+		# wall-mount case relies on) -- lifting the center by half of
+		# that sits its bottom edge exactly on the target's surface at
+		# the hinge line, instead of floating above or clipping into it.
+		local_offset.y = half_length
 
 	_target_position = target.to_global(local_offset)
 	_target_yaw = target.rotation.y + _rotation_offset

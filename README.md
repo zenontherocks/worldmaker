@@ -95,16 +95,25 @@ by default (**G** toggles this) placement is smart about surfaces: any
 shape sits flush against whichever face it's touching (not just resting on
 top of flat ground), a pending Plane automatically stands up flush against
 a wall it's aimed at instead of lying flat, and a pending Plane aimed at an
-*already-placed* Plane snaps flush and coplanar against its nearest edge
-instead of stacking on top of it — so Planes can tile edge-to-edge into
-flooring or walls. Away from a Plane-specific surface, both position and
-facing snap to a grid so shapes actually line up with each other instead
-of just sitting at grid-aligned positions while facing whatever arbitrary
-direction the player happened to be looking: horizontal position snaps to
-a 1-unit grid (`BuildModeController.grid_size`) and yaw snaps to 90°
+*already-placed* Plane snaps flush against its nearest edge instead of
+stacking on top of it. By default (no manual tilt) it matches the
+target's own orientation exactly, so Planes tile edge-to-edge into
+flooring or walls made of multiple panels — including tiling more wall
+panels sideways off an *already-vertical* wall to build a longer one.
+Tilting the pending Plane with **R**/**Shift+R** past 45° away from the
+target's orientation instead hinges it up at that edge — e.g. a wall
+rising from a floor tile's border — which is how actual buildings (floor
++ walls) get built from Planes.
+
+Away from a Plane-specific surface, both position and facing snap to a
+grid so shapes actually line up with each other instead of just sitting
+at grid-aligned positions while facing whatever arbitrary direction the
+player happened to be looking: horizontal position snaps to a 1-unit grid
+(`BuildModeController.grid_size`) and yaw snaps to 90°
 (`rotation_snap_degrees`). Turning snapping off with **G** falls back to
 plain facing-based placement with no grid/wall/edge assistance (still
-never clipping or floating, just no smart alignment).
+never clipping or floating, just no smart alignment). A small dot at the
+center of the screen always shows exactly where the camera is pointing.
 
 For a Plane specifically (when not snapped to a wall or another Plane),
 **R**/**Shift+R** tips it vertical instead of spinning it -- Plane starts
