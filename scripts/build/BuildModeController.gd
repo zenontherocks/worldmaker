@@ -256,7 +256,15 @@ func _compute_plane_edge_snap(target: PlaceableObject, hit_point: Vector3) -> vo
 		local_offset.y = half_length
 
 	_target_position = target.to_global(local_offset)
-	_target_yaw = target.rotation.y + _rotation_offset
+	# A plane's local width axis, after any yaw+tilt, always ends up at
+	# exactly (cos(yaw), 0, -sin(yaw)) in world space -- tilt never moves it,
+	# only yaw does. So a hinge standing up from the target's X-edge needs
+	# its width axis rotated 90 degrees relative to the target's yaw to run
+	# along that edge instead of pointing straight across it; the Z-edge
+	# case is already aligned and needs no correction. Skipped when coplanar
+	# since a flat tile's own X vs Z edge doesn't change which way it faces.
+	var yaw_correction := (PI * 0.5) if (standing and x_ratio >= z_ratio) else 0.0
+	_target_yaw = target.rotation.y + yaw_correction + _rotation_offset
 	_target_tilt = target.rotation.x + (hinge_sign * PI * 0.5 if standing else 0.0)
 
 
