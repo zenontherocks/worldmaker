@@ -114,6 +114,18 @@ static func create_instance(shape_id: int, dims: Dictionary, material: Material 
 	var mesh_instance := MeshInstance3D.new()
 	mesh_instance.name = "Mesh"
 	mesh_instance.mesh = mesh
+	if shape_id == ShapeType.PLANE:
+		# A Plane has no back face to speak of -- without this the far side
+		# is invisible (backface culling is on by default), showing
+		# whatever's behind it instead of the same skin. Every caller that
+		# might have skipped building a material at all (an unskinned
+		# Plane loaded from a save) gets a fresh default one just so this
+		# can be set; every other shape is a closed solid that never
+		# needs its backfaces rendered, so this stays Plane-only.
+		if material == null:
+			material = StandardMaterial3D.new()
+		if material is StandardMaterial3D:
+			material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	if material:
 		mesh_instance.material_override = material
 	body.add_child(mesh_instance)

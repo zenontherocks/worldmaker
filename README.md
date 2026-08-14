@@ -373,6 +373,13 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   without a `"skins"` key still load fine, just unskinned, same as before
   this was added.
 
+- **A Plane is double-sided.** `ShapeFactory.create_instance()` disables
+  backface culling (`cull_mode = CULL_DISABLED`) on a placed Plane's
+  material specifically -- Plane has no back face to speak of, so leaving
+  Godot's default culling on made the far side invisible instead of
+  showing the same skin. Every other shape stays default (closed solids
+  never need their backfaces rendered).
+
 - **UI buttons opt out of keyboard focus.** Every procedurally-built
   `Button` sets `focus_mode = Control.FOCUS_NONE`. Godot's built-in
   `ui_accept` action (Space *and* Enter) re-presses whatever Control last
