@@ -189,10 +189,34 @@ func _compute_default_placement(point: Vector3, normal: Vector3) -> void:
 	_target_position = point + normal * offset
 	_target_yaw = _current_facing_y() + _rotation_offset
 	if snap_enabled:
-		_target_position.x = snappedf(_target_position.x, grid_size)
-		_target_position.z = snappedf(_target_position.z, grid_size)
 		_target_yaw = snappedf(_target_yaw, deg_to_rad(rotation_snap_degrees))
+		_target_position = _snap_flush_position(_target_position, _target_yaw)
 	_target_tilt = _current_tilt()
+
+
+## Snaps position.x/z so the shape's own edges land on the grid, not just
+## its center -- naively rounding the center to the nearest grid_size
+## multiple only produces flush-tiling edges when half the shape's own
+## width happens to itself be a whole grid multiple (true for the default
+## Plane, whose 2.0 width makes its 1.0 half-width exactly one grid cell,
+## but false for the default Box, whose 0.5 half-width isn't a grid
+## multiple at grid_size 1.0) -- so a Box's center would land squarely on
+## a Plane's edge (straddling it, half hanging off) or in its middle,
+## never flush against it. Rounding the position of the shape's own low
+## edge first, then re-adding its half-extent, fixes that for any shape/
+## grid_size combination. yaw must already be snapped to a multiple of 90
+## degrees (rotation_snap_degrees's default) -- half_extents are in the
+## shape's own local frame, so an odd quarter-turn swaps which one applies
+## to world X vs world Z.
+func _snap_flush_position(pos: Vector3, yaw: float) -> Vector3:
+	var half := ShapeFactory.horizontal_half_extents(current_shape_id, current_dimensions)
+	var quarter_turns := int(round(yaw / (PI * 0.5)))
+	if quarter_turns % 2 != 0:
+		half = Vector2(half.y, half.x)
+	var snapped := pos
+	snapped.x = snappedf(pos.x - half.x, grid_size) + half.x
+	snapped.z = snappedf(pos.z - half.y, grid_size) + half.y
+	return snapped
 
 
 ## Auto-orients a pending Plane flush against a wall-like surface (hit

@@ -103,6 +103,28 @@ static func surface_offset(shape_id: int, dims: Dictionary, normal: Vector3) -> 
 	return 0.0
 
 
+## The shape's own local-space horizontal footprint half-extents (X, Z) --
+## how far its edges sit from its center along its own width/depth (or
+## width/length, or radius). Unlike surface_offset(), this doesn't depend
+## on which face got hit; it's always specifically the horizontal
+## footprint, used by BuildModeController._compute_default_placement() to
+## snap a shape's own edges onto the grid instead of just its center (see
+## that function's docstring for why those aren't the same thing).
+static func horizontal_half_extents(shape_id: int, dims: Dictionary) -> Vector2:
+	match shape_id:
+		ShapeType.BOX:
+			return Vector2(dims.get("width", 1.0), dims.get("depth", 1.0)) * 0.5
+		ShapeType.PLANE:
+			return Vector2(dims.get("width", 2.0), dims.get("length", 2.0)) * 0.5
+		ShapeType.CYLINDER, ShapeType.CONE:
+			var radius: float = dims.get("radius", 0.5)
+			return Vector2(radius, radius)
+		ShapeType.SPHERE:
+			var half_diameter: float = dims.get("diameter", 1.0) * 0.5
+			return Vector2(half_diameter, half_diameter)
+	return Vector2.ZERO
+
+
 ## Builds a fully wired StaticBody3D (mesh + collision + PlaceableObject
 ## script) ready to be added under GameManager.world_root.
 static func create_instance(shape_id: int, dims: Dictionary, material: Material = null) -> PlaceableObject:
