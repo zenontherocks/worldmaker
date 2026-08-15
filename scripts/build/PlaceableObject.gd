@@ -8,6 +8,8 @@ class_name PlaceableObject
 
 var shape_id: int = ShapeDefinitions.ShapeType.BOX
 var dimensions: Dictionary = {}
+## "" (unskinned), an imported texture's filename, or a solid color's own
+## "#rrggbb" hex string -- see SkinManager.is_color_key()/build_material().
 var skin_key: String = ""
 var object_id: int = -1
 

@@ -17,7 +17,9 @@ extends Node
 ##       "dimensions": {"width":1.0, "height":1.0, "depth":1.0},
 ##       "position": [x, y, z],
 ##       "rotation": [x, y, z],       # radians
-##       "skin": "concrete.png"       # key into "skins" above, "" if none
+##       "skin": "concrete.png"       # key into "skins" above, "" if none,
+##                                     # or a solid color's own "#rrggbb"
+##                                     # (see SkinManager.is_color_key())
 ##     }
 ##   ]
 ## }
@@ -107,13 +109,10 @@ func _spawn_object(object_data: Dictionary) -> void:
 	var shape_id := ShapeDefinitions.shape_id_from_key(object_data.get("shape", "box"))
 	var dims: Dictionary = object_data.get("dimensions", {})
 	var skin_key: String = object_data.get("skin", "")
+	if SkinManager.is_color_key(skin_key):
+		SkinManager.register_color(skin_key)
 
-	var material: Material = null
-	if skin_key != "" and SkinManager.has_skin(skin_key):
-		var std_material := StandardMaterial3D.new()
-		std_material.albedo_texture = SkinManager.get_cached(skin_key)
-		material = std_material
-
+	var material := SkinManager.build_material(skin_key)
 	var instance := ShapeFactory.create_instance(shape_id, dims, material)
 
 	var pos: Array = object_data.get("position", [0.0, 0.0, 0.0])

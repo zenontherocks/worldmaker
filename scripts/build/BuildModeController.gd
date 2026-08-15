@@ -67,9 +67,11 @@ var tool_mode: int = ToolMode.PLACE
 var current_shape_id: int = ShapeDefinitions.ShapeType.BOX
 var current_dimensions: Dictionary = {}
 
-## Which cached SkinManager texture new placements use; "" means the
-## default (unskinned) material. Settable directly by the pause menu's
-## Skins row via select_skin(), not just by importing a new image.
+## What new placements look like: "" for the default (unskinned) material,
+## an imported texture's filename, or (per SkinManager.is_color_key()) a
+## solid color's own "#rrggbb" hex string acting as its own key. Settable
+## directly by the pause menu's Skins row via select_skin() or its Colors
+## column via select_color(), not just by importing a new image.
 var active_skin_key: String = ""
 
 var _slots: Array = []
@@ -396,6 +398,20 @@ func select_skin(skin_key: String) -> void:
 	ghost.set_skin(SkinManager.get_cached(skin_key) if skin_key != "" else null)
 
 
+## Public: called by the pause menu's Colors column, mirroring select_skin()
+## above -- a solid color fills the exact same slot a texture skin does
+## (SkinManager.build_material() resolves either kind from the same
+## active_skin_key), so this just clears any texture preview on the ghost.
+## It doesn't try to preview the exact chosen color there too: the ghost's
+## albedo_color is already owned by set_valid()'s green/red translucent
+## tint, and it doesn't render an untinted preview of a texture skin
+## either, so leaving that tint as the only ghost feedback stays
+## consistent instead of fighting over the same material property.
+func select_color(hex: String) -> void:
+	active_skin_key = hex
+	ghost.set_skin(null)
+
+
 func _dimension_fields_in_context() -> Array:
 	if tool_mode == ToolMode.EDIT and _edit_locked and _highlighted_object != null:
 		return ShapeDefinitions.dimension_fields(_highlighted_object.shape_id)
@@ -476,7 +492,7 @@ func _place_current() -> void:
 	if not _has_valid_target:
 		return
 
-	var material := ghost.build_material_for_placement()
+	var material := SkinManager.build_material(active_skin_key)
 	var instance := ShapeFactory.create_instance(current_shape_id, current_dimensions, material)
 	instance.position = _target_position
 	instance.rotation.y = _target_yaw

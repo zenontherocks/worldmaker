@@ -35,15 +35,6 @@ func set_skin(texture: Texture2D) -> void:
 	_material.albedo_texture = texture
 
 
-## Returns a fresh material carrying whatever skin is currently previewed,
-## so the placed object doesn't end up sharing (and being mutated by) the
-## ghost's own material.
-func build_material_for_placement() -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_texture = _material.albedo_texture
-	return material
-
-
 ## Sets world-space (not local) position/rotation. This node sits under the
 ## player's Camera3D, which pitches as the player looks up/down -- a local
 ## rotation here would still inherit that pitch from the parent chain, so

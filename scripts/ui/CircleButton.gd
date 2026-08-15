@@ -7,10 +7,11 @@ class_name CircleButton
 ## a plain rectangular Button's clickable area would extend into this
 ## Control's square bounding box outside the drawn circle, so _gui_input()
 ## does its own distance-from-center check instead of relying on the
-## bounding rect. Two content modes, chosen by which property is set:
-## label_text draws centered text (tool circles), preview_texture draws a
-## skin thumbnail inscribed inside the circle so its corners stay inside
-## the circle's curve (good enough without a clipping shader).
+## bounding rect. Three content modes, chosen by which property is set (in
+## priority order): preview_texture draws a skin thumbnail inscribed inside
+## the circle so its corners stay inside the circle's curve (good enough
+## without a clipping shader), swatch_color draws a flat color fill (for
+## the Colors column), label_text draws centered text (tool circles).
 
 signal pressed
 
@@ -26,6 +27,13 @@ var label_text: String = "":
 var preview_texture: Texture2D = null:
 	set(value):
 		preview_texture = value
+		queue_redraw()
+
+## Alpha 0 (the default) means "unused" -- lets preview_texture/label_text
+## keep falling back the way they already did before this existed.
+var swatch_color: Color = Color(0, 0, 0, 0):
+	set(value):
+		swatch_color = value
 		queue_redraw()
 
 var selected: bool = false:
@@ -77,6 +85,8 @@ func _draw() -> void:
 		draw_texture_rect(
 			preview_texture, Rect2(center - Vector2(half, half), Vector2(half, half) * 2.0), false
 		)
+	elif swatch_color.a > 0.0:
+		draw_circle(center, _RADIUS * 0.68, swatch_color)
 	elif label_text != "":
 		var font := ThemeDB.fallback_font
 		var baseline_y := _RADIUS + _FONT_SIZE * 0.35

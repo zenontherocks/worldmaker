@@ -10,14 +10,21 @@ class_name PauseMenuUI
 ## set_build_controller() since that one isn't global (it lives under the
 ## player's camera).
 ##
-## The central panel only holds Resume plus the three file actions --
-## Tools and Skins are picked via two bands of CircleButtons positioned
-## above/below that panel instead, spanning the wider screen. They can't
-## live on the always-on BuildHUD: the mouse is pointer-locked (invisible,
-## driving camera look) during live gameplay and only becomes a visible,
-## clickable cursor once _open() below switches to MOUSE_MODE_VISIBLE, so
-## anything clickable has to be part of this paused overlay -- just placed
-## outside the panel rather than crammed inside it.
+## The central panel only holds Resume plus the three file actions -- Tools
+## and Skins are picked via two rows of CircleButtons stacked directly
+## below/above that panel (in the same centered column), and solid colors
+## via a Colors column to its left (hex input + a row of swatches for
+## colors already used). None of this can live on the always-on BuildHUD:
+## the mouse is pointer-locked (invisible, driving camera look) during live
+## gameplay and only becomes a visible, clickable cursor once _open() below
+## switches to MOUSE_MODE_VISIBLE, so anything clickable has to be part of
+## this paused overlay.
+##
+## A solid color is not a separate concept from a texture skin -- it fills
+## the exact same active_skin_key slot on BuildModeController (as its own
+## "#rrggbb" hex string, see SkinManager.is_color_key()), so picking one
+## deselects the other automatically: both the Skins row and Colors column
+## just re-read the same shared active_skin_key to decide what's selected.
 ##
 ## Two flows for the file buttons, chosen per button, exactly as before:
 ## - Web: WebFilePicker opens a plain, unfiltered browser file picker for
@@ -39,6 +46,9 @@ var _tool_buttons: Array = []  ## [{"circle": CircleButton, "slot_index": int}]
 
 var _skins_row: HFlowContainer
 
+var _colors_row: HFlowContainer
+var _hex_input: LineEdit
+
 ## Visible feedback for the whole import/export flow -- push_warning() alone
 ## isn't enough here, it's a debug-only channel that never shows up anywhere
 ## in a deployed Web build, so any failure would otherwise be completely
@@ -58,6 +68,7 @@ func set_build_controller(controller: BuildModeController) -> void:
 	_build_controller = controller
 	_refresh_tools_row()
 	_refresh_skins_row()
+	_refresh_colors_row()
 
 
 func _ready() -> void:
@@ -82,18 +93,25 @@ func _ready() -> void:
 	centering.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	backdrop.add_child(centering)
 
-	# Skins row, the panel, and Tools row stack as one centered column --
-	# CenterContainer only centers a single child, so that column is this
-	# VBoxContainer, with the panel as its middle entry. This also solves
-	# the flow rows' wrapping: a FlowContainer only wraps into multiple
-	# lines when its parent actually assigns it a width to wrap within, and
-	# VBoxContainer (unlike CenterContainer) stretches children to its own
-	# width by default -- so each row ends up exactly as wide as the panel
-	# and wraps into "a row or two" as more circles get added, instead of
-	# every circle stacking into its own single-item line.
+	# CenterContainer only centers a single child, so everything else lives
+	# inside this HBoxContainer: the Colors column on the left, and the
+	# existing Skins/panel/Tools column on the right.
+	var outer_hbox := HBoxContainer.new()
+	outer_hbox.add_theme_constant_override("separation", 16)
+	centering.add_child(outer_hbox)
+
+	outer_hbox.add_child(_make_colors_column())
+
+	# Skins row, the panel, and Tools row stack as one column -- this also
+	# solves the flow rows' wrapping: a FlowContainer only wraps into
+	# multiple lines when its parent actually assigns it a width to wrap
+	# within, and VBoxContainer (unlike CenterContainer) stretches children
+	# to its own width by default -- so each row ends up exactly as wide as
+	# the panel and wraps into "a row or two" as more circles get added,
+	# instead of every circle stacking into its own single-item line.
 	var outer_vbox := VBoxContainer.new()
 	outer_vbox.add_theme_constant_override("separation", 16)
-	centering.add_child(outer_vbox)
+	outer_hbox.add_child(outer_vbox)
 
 	_skins_row = _make_circle_row()
 	outer_vbox.add_child(_skins_row)
@@ -169,6 +187,7 @@ func _ready() -> void:
 
 	SkinManager.skin_loaded.connect(_on_skin_load_succeeded)
 	SkinManager.skin_load_failed.connect(_on_skin_load_failed)
+	SkinManager.color_used.connect(_on_color_used)
 
 	if OS.has_feature("web"):
 		WebFilePicker.file_picked.connect(_on_web_file_picked)
@@ -182,12 +201,41 @@ func _ready() -> void:
 
 
 ## A wrapping row of CircleButtons, centered on each line it wraps to --
-## used for both the Skins row (above the panel) and Tools row (below it).
+## used for the Skins row (above the panel), Tools row (below it), and the
+## Colors column's own row of swatches.
 func _make_circle_row() -> HFlowContainer:
 	var row := HFlowContainer.new()
 	row.alignment = FlowContainer.ALIGNMENT_CENTER
 	row.mouse_filter = Control.MOUSE_FILTER_PASS
 	return row
+
+
+## The left-side column: a muted heading, a hex text input, and a wrapping
+## row of solid-color swatches for colors already used. Narrower than the
+## panel (custom_minimum_size below) so it reads as its own column rather
+## than a second full-width row -- still wide enough for a few swatches per
+## line before wrapping, same "give the row a real width" fix the Skins/
+## Tools rows rely on (this VBoxContainer stretches _colors_row to its own
+## width, same as outer_vbox does for those).
+func _make_colors_column() -> VBoxContainer:
+	var column := VBoxContainer.new()
+	column.custom_minimum_size = Vector2(200, 0)
+	column.add_theme_constant_override("separation", 8)
+
+	var label := Label.new()
+	label.text = "Colors"
+	label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+	column.add_child(label)
+
+	_hex_input = LineEdit.new()
+	_hex_input.placeholder_text = "RRGGBB"
+	_hex_input.text_submitted.connect(_on_hex_color_submitted)
+	column.add_child(_hex_input)
+
+	_colors_row = _make_circle_row()
+	column.add_child(_colors_row)
+
+	return column
 
 
 ## Built once (the set of tools never changes); _refresh_tools_row() then
@@ -269,6 +317,64 @@ func _on_skin_button_pressed(skin_key: String) -> void:
 	if _build_controller:
 		_build_controller.select_skin(skin_key)
 	_refresh_skins_row()
+	# A texture skin and a color share one active_skin_key slot (see the
+	# class docstring), so picking a texture here must un-highlight
+	# whichever color circle was previously selected.
+	_refresh_colors_row()
+
+
+## Same rebuild-from-scratch approach as _refresh_skins_row(), and for the
+## same reason: this only runs on open/select, never per-frame.
+## SkinManager.used_colors() already reflects every color entered this
+## session or pulled in from a loaded world file. No "None" entry here --
+## the Skins row's own None circle already clears to unskinned regardless
+## of whether a texture or a color was previously active.
+func _refresh_colors_row() -> void:
+	for child in _colors_row.get_children():
+		child.queue_free()
+	if _build_controller == null:
+		return
+
+	for hex in SkinManager.used_colors():
+		var circle := CircleButton.new()
+		circle.swatch_color = Color.html(hex)
+		circle.selected = hex == _build_controller.active_skin_key
+		circle.pressed.connect(_on_color_circle_pressed.bind(hex))
+		_colors_row.add_child(circle)
+
+
+func _on_color_circle_pressed(hex: String) -> void:
+	if _build_controller:
+		_build_controller.select_color(hex)
+	_refresh_colors_row()
+	_refresh_skins_row()
+
+
+func _on_color_used(_hex: String) -> void:
+	_refresh_colors_row()
+
+
+## Empty/whitespace input is a no-op (e.g. hitting Enter in an empty field)
+## rather than an error -- only a genuinely malformed hex string counts as
+## a mistake worth surfacing.
+func _on_hex_color_submitted(text: String) -> void:
+	var trimmed := text.strip_edges()
+	if trimmed == "":
+		return
+	if not Color.html_is_valid(trimmed):
+		_set_status("'%s' isn't a valid hex color" % text, true)
+		return
+
+	# Normalized form (always "#rrggbb", no alpha) so equivalent inputs --
+	# "3fae02", "#3FAE02", "3fae02ff" -- collapse to the same used-colors
+	# entry instead of piling up near-duplicate swatches.
+	var hex := "#" + Color.html(trimmed).to_html(false)
+	SkinManager.register_color(hex)
+	if _build_controller:
+		_build_controller.select_color(hex)
+	_hex_input.text = ""
+	_refresh_colors_row()
+	_refresh_skins_row()
 
 
 func _make_file_dialog(mode: FileDialog.FileMode, filters: PackedStringArray) -> FileDialog:
@@ -324,6 +430,7 @@ func _open() -> void:
 	_status_label.text = ""
 	_refresh_tools_row()
 	_refresh_skins_row()
+	_refresh_colors_row()
 
 
 func _close() -> void:

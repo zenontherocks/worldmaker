@@ -146,7 +146,12 @@ above and below it, wrapping into a row or two as needed -- a Tools row
 below it mirroring the **E** cycle (click any of the eight tools directly
 instead of cycling through them) and a Skins row above it showing a
 thumbnail circle per loaded skin (click one to make it active, instead of
-whichever was imported most recently).
+whichever was imported most recently). A Colors column to the left offers
+a second way to skin a placement: type a hex code (e.g. `ff8800`) and hit
+Enter to make that solid color active, with a circle appearing below the
+input for every color used so far to switch back to one later. A color
+fills the exact same slot a texture skin does, so picking one deselects
+the other.
 
 In the editor (and any desktop export) the pause menu always uses ordinary
 native file dialogs — real OS file pickers reading/writing the actual
@@ -386,6 +391,21 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   world's skins actually survive a reload. Older (version 1) world files
   without a `"skins"` key still load fine, just unskinned, same as before
   this was added.
+
+- **A solid color is just another kind of skin.** The pause menu's Colors
+  column and Skins row both write into the same
+  `BuildModeController.active_skin_key` string, and `PlaceableObject.skin_key`/
+  the world JSON's `"skin"` field stay a single opaque string too — a solid
+  color is stored as its own `"#rrggbb"` hex value, distinguished from a
+  texture filename purely by `SkinManager.is_color_key()`
+  (`begins_with("#")`, since image filenames never start with one).
+  `SkinManager.build_material()` is the one place that string turns into an
+  actual `StandardMaterial3D` (`albedo_color` or `albedo_texture`, or
+  `null` for `""`) — both the live placement path and
+  `SaveLoadManager._spawn_object()` call through it instead of each
+  building their own material, which is also what makes picking a color
+  automatically deselect a texture skin and vice versa: there's only one
+  slot to hold either.
 
 - **A Plane is double-sided.** `ShapeFactory.create_instance()` disables
   backface culling (`cull_mode = CULL_DISABLED`) on a placed Plane's
