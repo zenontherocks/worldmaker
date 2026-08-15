@@ -82,9 +82,25 @@ func _ready() -> void:
 	centering.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	backdrop.add_child(centering)
 
+	# Skins row, the panel, and Tools row stack as one centered column --
+	# CenterContainer only centers a single child, so that column is this
+	# VBoxContainer, with the panel as its middle entry. This also solves
+	# the flow rows' wrapping: a FlowContainer only wraps into multiple
+	# lines when its parent actually assigns it a width to wrap within, and
+	# VBoxContainer (unlike CenterContainer) stretches children to its own
+	# width by default -- so each row ends up exactly as wide as the panel
+	# and wraps into "a row or two" as more circles get added, instead of
+	# every circle stacking into its own single-item line.
+	var outer_vbox := VBoxContainer.new()
+	outer_vbox.add_theme_constant_override("separation", 16)
+	centering.add_child(outer_vbox)
+
+	_skins_row = _make_circle_row()
+	outer_vbox.add_child(_skins_row)
+
 	_content = PanelContainer.new()
 	_content.custom_minimum_size = Vector2(380, 0)
-	centering.add_child(_content)
+	outer_vbox.add_child(_content)
 
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 8)
@@ -131,11 +147,8 @@ func _ready() -> void:
 	hint.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
 	vbox.add_child(hint)
 
-	# Skins band (top) and Tools band (bottom): siblings of `centering`, not
-	# children of it, so they span the full screen width outside the panel
-	# instead of being squeezed into its fixed 380px column.
-	_skins_row = _make_circle_band(backdrop, Control.PRESET_TOP_WIDE)
-	_tools_row = _make_circle_band(backdrop, Control.PRESET_BOTTOM_WIDE)
+	_tools_row = _make_circle_row()
+	outer_vbox.add_child(_tools_row)
 	_build_tools_row()
 
 	_skin_dialog = _make_file_dialog(
@@ -168,23 +181,12 @@ func _ready() -> void:
 	_open()
 
 
-## A full-width band anchored near one screen edge, centering a wrapping row
-## of CircleButtons -- used for both the Skins band (top) and Tools band
-## (bottom) so they read as part of the same paused overlay as the central
-## panel without being squeezed into its fixed width. CenterContainer keeps
-## re-centering the row as circles are added/removed (e.g. a new skin
-## import), unlike a fixed anchor offset computed once.
-func _make_circle_band(parent: Control, edge_preset: Control.LayoutPreset) -> HFlowContainer:
-	var band := CenterContainer.new()
-	band.set_anchors_preset(edge_preset)
-	band.offset_top = 24 if edge_preset == Control.PRESET_TOP_WIDE else -100
-	band.offset_bottom = 100 if edge_preset == Control.PRESET_TOP_WIDE else -24
-	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	parent.add_child(band)
-
+## A wrapping row of CircleButtons, centered on each line it wraps to --
+## used for both the Skins row (above the panel) and Tools row (below it).
+func _make_circle_row() -> HFlowContainer:
 	var row := HFlowContainer.new()
+	row.alignment = FlowContainer.ALIGNMENT_CENTER
 	row.mouse_filter = Control.MOUSE_FILTER_PASS
-	band.add_child(row)
 	return row
 
 

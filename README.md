@@ -141,11 +141,12 @@ horizontally, **T**/**Shift+T** tilts it vertically), and **Edit**
 Place mode sizes a pending placement -- left-click again to let go of it).
 
 Press **Esc** to open the pause menu: a compact panel (Resume, Load Skin,
-Save World, Load World) framed by two bands of circles spanning the rest of
-the screen -- a Tools band below it mirroring the **E** cycle (click any of
-the eight tools directly instead of cycling through them) and a Skins band
-above it showing a thumbnail circle per loaded skin (click one to make it
-active, instead of whichever was imported most recently).
+Save World, Load World) framed by two rows of circles stacked directly
+above and below it, wrapping into a row or two as needed -- a Tools row
+below it mirroring the **E** cycle (click any of the eight tools directly
+instead of cycling through them) and a Skins row above it showing a
+thumbnail circle per loaded skin (click one to make it active, instead of
+whichever was imported most recently).
 
 In the editor (and any desktop export) the pause menu always uses ordinary
 native file dialogs — real OS file pickers reading/writing the actual
@@ -356,16 +357,22 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   free with no per-script gating needed. The menu itself (and its
   `FileDialog`s) opts in to `PROCESS_MODE_ALWAYS` so its buttons and
   `WebFilePicker`'s poll keep working while paused. Its central panel holds
-  only Resume and the three file actions; Tools and Skins are two bands of
-  `CircleButton`s spanning the screen above/below that panel instead of
-  being crammed inside it (the mouse is only a visible, clickable cursor
-  while paused, so they can't live on the always-on `BuildHUD`). The Tools
-  band is built once from `ShapeDefinitions.ORDER` plus Delete/Rotate/Edit
-  and just toggles which circle is `selected` to show the current
-  selection; the Skins band is rebuilt from `SkinManager.skin_keys()` on
-  every open and every fresh import instead, since that list actually
-  grows over a session, with each circle previewing the actual skin
-  texture instead of showing its filename.
+  only Resume and the three file actions; Tools and Skins are two rows of
+  `CircleButton`s stacked directly below/above that panel in the same
+  centered `VBoxContainer` instead of being crammed inside it (the mouse is
+  only a visible, clickable cursor while paused, so they can't live on the
+  always-on `BuildHUD`). Nesting them alongside the (fixed-width) panel
+  rather than in their own separately-anchored container is what makes them
+  wrap into "a row or two" as circles are added — `HFlowContainer` only
+  wraps into multiple lines when its parent actually assigns it a width to
+  wrap within, and `VBoxContainer` (unlike `CenterContainer`) stretches
+  children to its own width by default. The Tools row is built once from
+  `ShapeDefinitions.ORDER` plus Delete/Rotate/Edit and just toggles which
+  circle is `selected` to show the current selection; the Skins row is
+  rebuilt from `SkinManager.skin_keys()` on every open and every fresh
+  import instead, since that list actually grows over a session, with each
+  circle previewing the actual skin texture instead of showing its
+  filename.
 
 - **Skins are embedded in the world file, keyed by name.** A placed object
   stores its skin's file name (`skin_key`) in `"objects"`, and
