@@ -4,8 +4,10 @@
 export.cfg
 *.translation
 
-# CI export output (see .github/workflows/deploy.yml)
-build/
+# CI export output (see .github/workflows/deploy.yml) -- anchored to the
+# repo root so this doesn't also match scripts/build/, an unrelated source
+# directory that happens to share the name.
+/build/
 
 # OS
 .DS_Store

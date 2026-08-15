@@ -9,6 +9,10 @@ to a JSON file and can be re-imported later.
 Built for the "GL Compatibility" renderer so it stays usable on low-end
 Linux laptops and in a browser tab.
 
+Contributing or working with an AI coding assistant? See `CLAUDE.md` for
+an orientation map and extension cookbook aimed at editing this codebase
+specifically (this file stays focused on setup/controls/deploy).
+
 ## 1. Project structure
 
 ```
