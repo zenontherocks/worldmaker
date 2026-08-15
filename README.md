@@ -38,9 +38,10 @@ worldmaker/
 │   │   ├── GhostPreview.gd     # translucent placement preview
 │   │   └── BuildModeController.gd # raycast, cycling, dimension edit, placement
 │   └── ui/
-│       ├── UIRoot.gd           # builds the two UI pieces
+│       ├── UIRoot.gd           # builds the UI pieces
 │       ├── PauseMenuUI.gd      # Esc pause menu: import/export, pauses the tree
-│       └── BuildHUD.gd         # bottom-of-screen build status readout
+│       ├── BuildHUD.gd         # bottom-of-screen build status readout
+│       └── CircleButton.gd     # round clickable button (pause menu's Tools/Skins bands)
 ```
 
 No script exceeds a single responsibility: movement, look, raycasting,
@@ -139,11 +140,12 @@ horizontally, **T**/**Shift+T** tilts it vertically), and **Edit**
 (left-click locks onto it, then **Q**/wheel resize it live the same way
 Place mode sizes a pending placement -- left-click again to let go of it).
 
-Press **Esc** to open the pause menu, which is also where you can pick any
-of the eight tools directly with the cursor (a Tools row mirroring the
-**E** cycle) instead of cycling through them, pick which imported skin is
-active from a Skins row (not just whichever was imported most recently),
-import a new skin, or export/import the whole world as JSON.
+Press **Esc** to open the pause menu: a compact panel (Resume, Load Skin,
+Save World, Load World) framed by two bands of circles spanning the rest of
+the screen -- a Tools band below it mirroring the **E** cycle (click any of
+the eight tools directly instead of cycling through them) and a Skins band
+above it showing a thumbnail circle per loaded skin (click one to make it
+active, instead of whichever was imported most recently).
 
 In the editor (and any desktop export) the pause menu always uses ordinary
 native file dialogs — real OS file pickers reading/writing the actual
@@ -353,12 +355,17 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   mode) uses Godot's default `PROCESS_MODE_PAUSABLE`, so it freezes for
   free with no per-script gating needed. The menu itself (and its
   `FileDialog`s) opts in to `PROCESS_MODE_ALWAYS` so its buttons and
-  `WebFilePicker`'s poll keep working while paused. Its Tools row is built
-  once from `ShapeDefinitions.ORDER` plus Delete/Rotate/Edit and just
-  toggles which button is `disabled` to show the current selection; its
-  Skins row
-  is rebuilt from `SkinManager.skin_keys()` on every open and every fresh
-  import instead, since that list actually grows over a session.
+  `WebFilePicker`'s poll keep working while paused. Its central panel holds
+  only Resume and the three file actions; Tools and Skins are two bands of
+  `CircleButton`s spanning the screen above/below that panel instead of
+  being crammed inside it (the mouse is only a visible, clickable cursor
+  while paused, so they can't live on the always-on `BuildHUD`). The Tools
+  band is built once from `ShapeDefinitions.ORDER` plus Delete/Rotate/Edit
+  and just toggles which circle is `selected` to show the current
+  selection; the Skins band is rebuilt from `SkinManager.skin_keys()` on
+  every open and every fresh import instead, since that list actually
+  grows over a session, with each circle previewing the actual skin
+  texture instead of showing its filename.
 
 - **Skins are embedded in the world file, keyed by name.** A placed object
   stores its skin's file name (`skin_key`) in `"objects"`, and

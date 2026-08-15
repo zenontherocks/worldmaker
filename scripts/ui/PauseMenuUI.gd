@@ -10,6 +10,15 @@ class_name PauseMenuUI
 ## set_build_controller() since that one isn't global (it lives under the
 ## player's camera).
 ##
+## The central panel only holds Resume plus the three file actions --
+## Tools and Skins are picked via two bands of CircleButtons positioned
+## above/below that panel instead, spanning the wider screen. They can't
+## live on the always-on BuildHUD: the mouse is pointer-locked (invisible,
+## driving camera look) during live gameplay and only becomes a visible,
+## clickable cursor once _open() below switches to MOUSE_MODE_VISIBLE, so
+## anything clickable has to be part of this paused overlay -- just placed
+## outside the panel rather than crammed inside it.
+##
 ## Two flows for the file buttons, chosen per button, exactly as before:
 ## - Web: WebFilePicker opens a plain, unfiltered browser file picker for
 ##   imports; world export triggers a browser download. Godot's own
@@ -26,7 +35,7 @@ var _content: PanelContainer
 var _build_controller: BuildModeController = null
 
 var _tools_row: HFlowContainer
-var _tool_buttons: Array = []  ## [{"button": Button, "slot_index": int}]
+var _tool_buttons: Array = []  ## [{"circle": CircleButton, "slot_index": int}]
 
 var _skins_row: HFlowContainer
 
@@ -93,29 +102,20 @@ func _ready() -> void:
 	resume_button.pressed.connect(_close)
 	vbox.add_child(resume_button)
 
-	vbox.add_child(_make_section_label("Tools"))
-	_tools_row = HFlowContainer.new()
-	vbox.add_child(_tools_row)
-	_build_tools_row()
-
-	vbox.add_child(_make_section_label("Skins"))
-	_skins_row = HFlowContainer.new()
-	vbox.add_child(_skins_row)
-
 	var import_skin_button := Button.new()
-	import_skin_button.text = "Import Skin (PNG/JPG)"
+	import_skin_button.text = "Load Skin (PNG/JPG)"
 	import_skin_button.focus_mode = Control.FOCUS_NONE
 	import_skin_button.pressed.connect(_on_import_skin_pressed)
 	vbox.add_child(import_skin_button)
 
 	var export_button := Button.new()
-	export_button.text = "Export World (JSON)"
+	export_button.text = "Save World (JSON)"
 	export_button.focus_mode = Control.FOCUS_NONE
 	export_button.pressed.connect(_on_export_pressed)
 	vbox.add_child(export_button)
 
 	var import_world_button := Button.new()
-	import_world_button.text = "Import World (JSON)"
+	import_world_button.text = "Load World (JSON)"
 	import_world_button.focus_mode = Control.FOCUS_NONE
 	import_world_button.pressed.connect(_on_import_world_pressed)
 	vbox.add_child(import_world_button)
@@ -130,6 +130,13 @@ func _ready() -> void:
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
 	vbox.add_child(hint)
+
+	# Skins band (top) and Tools band (bottom): siblings of `centering`, not
+	# children of it, so they span the full screen width outside the panel
+	# instead of being squeezed into its fixed 380px column.
+	_skins_row = _make_circle_band(backdrop, Control.PRESET_TOP_WIDE)
+	_tools_row = _make_circle_band(backdrop, Control.PRESET_BOTTOM_WIDE)
+	_build_tools_row()
 
 	_skin_dialog = _make_file_dialog(
 		FileDialog.FILE_MODE_OPEN_FILE,
@@ -161,36 +168,48 @@ func _ready() -> void:
 	_open()
 
 
-func _make_section_label(text: String) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
-	return label
+## A full-width band anchored near one screen edge, centering a wrapping row
+## of CircleButtons -- used for both the Skins band (top) and Tools band
+## (bottom) so they read as part of the same paused overlay as the central
+## panel without being squeezed into its fixed width. CenterContainer keeps
+## re-centering the row as circles are added/removed (e.g. a new skin
+## import), unlike a fixed anchor offset computed once.
+func _make_circle_band(parent: Control, edge_preset: Control.LayoutPreset) -> HFlowContainer:
+	var band := CenterContainer.new()
+	band.set_anchors_preset(edge_preset)
+	band.offset_top = 24 if edge_preset == Control.PRESET_TOP_WIDE else -100
+	band.offset_bottom = 100 if edge_preset == Control.PRESET_TOP_WIDE else -24
+	band.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	parent.add_child(band)
+
+	var row := HFlowContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_PASS
+	band.add_child(row)
+	return row
 
 
 ## Built once (the set of tools never changes); _refresh_tools_row() then
-## just toggles which button is disabled to show the current selection.
+## just toggles which circle is selected to show the current tool.
 ## Slot order mirrors BuildModeController's own _slots construction --
 ## the five shapes in ShapeDefinitions.ORDER, then Delete, Rotate, Edit.
 func _build_tools_row() -> void:
 	var index := 0
 	for shape_id in ShapeDefinitions.ORDER:
-		_add_tool_button(ShapeDefinitions.shape_name(shape_id), index)
+		_add_tool_circle(ShapeDefinitions.shape_name(shape_id), index)
 		index += 1
-	_add_tool_button("Delete", index)
+	_add_tool_circle("Delete", index)
 	index += 1
-	_add_tool_button("Rotate", index)
+	_add_tool_circle("Rotate", index)
 	index += 1
-	_add_tool_button("Edit", index)
+	_add_tool_circle("Edit", index)
 
 
-func _add_tool_button(label: String, slot_index: int) -> void:
-	var button := Button.new()
-	button.text = label
-	button.focus_mode = Control.FOCUS_NONE
-	button.pressed.connect(_on_tool_button_pressed.bind(slot_index))
-	_tools_row.add_child(button)
-	_tool_buttons.append({"button": button, "slot_index": slot_index})
+func _add_tool_circle(label: String, slot_index: int) -> void:
+	var circle := CircleButton.new()
+	circle.label_text = label
+	circle.pressed.connect(_on_tool_button_pressed.bind(slot_index))
+	_tools_row.add_child(circle)
+	_tool_buttons.append({"circle": circle, "slot_index": slot_index})
 
 
 func _on_tool_button_pressed(slot_index: int) -> void:
@@ -204,7 +223,7 @@ func _refresh_tools_row() -> void:
 		return
 	var current_index := _current_slot_index()
 	for entry in _tool_buttons:
-		entry["button"].disabled = entry["slot_index"] == current_index
+		entry["circle"].selected = entry["slot_index"] == current_index
 
 
 func _current_slot_index() -> int:
@@ -221,27 +240,27 @@ func _current_slot_index() -> int:
 
 ## Rebuilt from scratch each time -- simpler than diffing against
 ## SkinManager's cache, and this only ever runs on a menu open or a fresh
-## import, never per-frame.
+## import, never per-frame. SkinManager.skin_keys() already reflects every
+## skin loaded this session or pulled in from a loaded world file, so this
+## covers both "skins I've loaded" and "skins used in this build" for free.
 func _refresh_skins_row() -> void:
 	for child in _skins_row.get_children():
 		child.queue_free()
 	if _build_controller == null:
 		return
 
-	var none_button := Button.new()
-	none_button.text = "None"
-	none_button.focus_mode = Control.FOCUS_NONE
-	none_button.disabled = _build_controller.active_skin_key == ""
-	none_button.pressed.connect(_on_skin_button_pressed.bind(""))
-	_skins_row.add_child(none_button)
+	var none_circle := CircleButton.new()
+	none_circle.label_text = "None"
+	none_circle.selected = _build_controller.active_skin_key == ""
+	none_circle.pressed.connect(_on_skin_button_pressed.bind(""))
+	_skins_row.add_child(none_circle)
 
 	for skin_key in SkinManager.skin_keys():
-		var button := Button.new()
-		button.text = skin_key
-		button.focus_mode = Control.FOCUS_NONE
-		button.disabled = skin_key == _build_controller.active_skin_key
-		button.pressed.connect(_on_skin_button_pressed.bind(skin_key))
-		_skins_row.add_child(button)
+		var circle := CircleButton.new()
+		circle.preview_texture = SkinManager.get_cached(skin_key)
+		circle.selected = skin_key == _build_controller.active_skin_key
+		circle.pressed.connect(_on_skin_button_pressed.bind(skin_key))
+		_skins_row.add_child(circle)
 
 
 func _on_skin_button_pressed(skin_key: String) -> void:
