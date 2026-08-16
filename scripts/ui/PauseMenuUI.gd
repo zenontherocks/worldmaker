@@ -66,6 +66,19 @@ var _build_controller: BuildModeController = null
 const _RECAPTURE_GRACE_MS := 300
 var _last_close_time_ms: int = -_RECAPTURE_GRACE_MS
 
+## Browsers grant Pointer Lock reliably from a click but are much stingier
+## about granting it from a keyboard activation (Esc) -- a restriction the
+## grace window above can't work around, since it only buys a pending
+## request more time, and a keyboard-triggered request is the wrong *kind*
+## of gesture to begin with, not just a late one. So an Esc-triggered
+## _close() doesn't ask for capture itself at all; it sets this flag and
+## waits for the player's next real click to reach PlayerCamera's own
+## click-recapture fallback (see that script's _unhandled_input), which is
+## a genuine click gesture and reliably succeeds. While this is true,
+## _process() below stays quiet instead of reinterpreting "not captured
+## yet" as "browser kicked us out, reopen."
+var _awaiting_click_recapture: bool = false
+
 ## Shared by every card (Skins/Objects & Tools/Colors/the central panel)
 ## so they read as one uniform layout -- built once in _ready(), not per
 ## card, since a StyleBoxFlat is just rendering parameters and Godot
@@ -508,7 +521,7 @@ func _make_file_dialog(mode: FileDialog.FileMode, filters: PackedStringArray) ->
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("toggle_pause_menu"):
 		if _paused:
-			_close()
+			_close(false)
 		else:
 			_open()
 		get_viewport().set_input_as_handled()
@@ -536,6 +549,10 @@ func _on_backdrop_gui_input(event: InputEvent) -> void:
 ## _RECAPTURE_GRACE_MS (see its declaration) so this doesn't preempt a
 ## Resume click's own still-pending (or just-rejected) recapture attempt.
 func _process(_delta: float) -> void:
+	if _awaiting_click_recapture:
+		if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			_awaiting_click_recapture = false
+		return
 	if not _paused and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		if Time.get_ticks_msec() - _last_close_time_ms >= _RECAPTURE_GRACE_MS:
 			_open()
@@ -546,18 +563,25 @@ func _open() -> void:
 	visible = true
 	get_tree().paused = true
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	_awaiting_click_recapture = false
 	_status_label.text = ""
 	_refresh_tools_row()
 	_refresh_skins_row()
 	_refresh_colors_row()
 
 
-func _close() -> void:
+## force_recapture is false only for the Esc path (see
+## _awaiting_click_recapture's declaration for why Esc can't just request
+## capture directly the way a click can).
+func _close(force_recapture: bool = true) -> void:
 	_paused = false
 	visible = false
 	get_tree().paused = false
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	_last_close_time_ms = Time.get_ticks_msec()
+	if force_recapture:
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		_last_close_time_ms = Time.get_ticks_msec()
+	else:
+		_awaiting_click_recapture = true
 
 
 func _set_status(text: String, is_error: bool = false) -> void:

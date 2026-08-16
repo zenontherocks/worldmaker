@@ -367,6 +367,23 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   eliminate the underlying browser cooldown entirely, since that's
   enforced outside the page's control either way.
 
+- **Esc-triggered closes don't request Pointer Lock directly — they wait
+  for the next click instead.** Browsers grant Pointer Lock reliably from
+  a click but are markedly stingier about granting it from a keyboard
+  activation, which is a different restriction than the focus-cooldown
+  above (a wrong *kind* of gesture, not just a late request) — the grace
+  window can't paper over it, since there's no pending grant to wait out.
+  So `_close(false)` (used only by the Esc branch in `_unhandled_input`)
+  closes the menu without touching `Input.mouse_mode` at all, setting
+  `_awaiting_click_recapture` instead; `PlayerCamera`'s own existing
+  click-to-recapture fallback (a genuine click, reliably granted) is what
+  actually re-engages the mouse on the player's next click, and
+  `_process()` holds off its normal reopen check until that flag clears.
+  Resume and the backdrop click are unaffected — both are already real
+  click gestures, so they keep calling `_close()` with its default
+  `force_recapture = true` and requesting capture directly, same as
+  before.
+
 - **Real `FileDialog` on desktop; a single universal fallback on Web,
   never Godot's own "native" Web dialog.** Desktop exports (and the
   editor) always use ordinary native `FileDialog`s reading/writing the
