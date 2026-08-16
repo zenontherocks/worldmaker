@@ -89,13 +89,22 @@ func _draw() -> void:
 		draw_circle(center, _RADIUS * 0.68, swatch_color)
 	elif label_text != "":
 		var font := ThemeDB.fallback_font
-		var baseline_y := _RADIUS + _FONT_SIZE * 0.35
-		draw_string(
-			font,
-			Vector2(0, baseline_y),
-			label_text,
-			HORIZONTAL_ALIGNMENT_CENTER,
-			DIAMETER,
-			_FONT_SIZE,
-			Color.WHITE
-		)
+		# A label with an embedded newline (e.g. "Empty\nHands") draws as a
+		# vertically-centered block of lines instead of one line -- the
+		# circle's fixed DIAMETER can't fit a two-word label at a readable
+		# size otherwise. Single-line labels (every other tool circle) are
+		# just the lines.size() == 1 case of the same math, so this doesn't
+		# change their existing baseline.
+		var lines := label_text.split("\n")
+		var line_height := font.get_height(_FONT_SIZE)
+		var start_y := _RADIUS - line_height * (lines.size() - 1) * 0.5 + _FONT_SIZE * 0.35
+		for i in lines.size():
+			draw_string(
+				font,
+				Vector2(0, start_y + line_height * i),
+				lines[i],
+				HORIZONTAL_ALIGNMENT_CENTER,
+				DIAMETER,
+				_FONT_SIZE,
+				Color.WHITE
+			)

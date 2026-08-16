@@ -11,17 +11,23 @@ class_name BuildModeController
 ## methods (select_slot/select_skin) the pause menu calls directly via the
 ## reference Main.gd hands it -- it never reaches into the UI itself.
 ##
-## [E] cycles through eight tools: the five placeable shapes, then Delete,
-## Rotate, and Edit. The pause menu's Tools row offers the same eight
-## directly, via select_slot(). Delete, Rotate, and Edit all target
-## whatever placed object the crosshair is over (found via the same
+## [E] cycles through nine tools: the five placeable shapes, then Empty
+## Hands, Delete, Rotate, and Edit. The pause menu's Tools row offers the
+## same nine directly, via select_slot(). Delete, Rotate, and Edit all
+## target whatever placed object the crosshair is over (found via the same
 ## raycast used for placement) and highlight it by temporarily swapping
 ## its mesh's material; Delete removes it on click, Rotate spins it in
 ## place with the same R/Shift+R (and T/Shift+T) keys that adjust a
 ## pending placement's rotation, and Edit locks onto it on click so
 ## Q/wheel can resize it live instead of adjusting a pending placement.
+## Empty Hands is the odd one out: it does nothing at all (no ghost, no
+## raycast highlight, no action on click or any other input) -- it exists
+## purely as a neutral resting state so the player isn't holding a shape
+## by default (see _ready()/reset_for_new_world()), and so there's a way
+## to put a shape down without switching to a tool that acts on other
+## objects instead.
 
-enum ToolMode { PLACE, DELETE, ROTATE, EDIT }
+enum ToolMode { PLACE, DELETE, ROTATE, EDIT, EMPTY }
 
 signal shape_changed(shape_id: int, dimensions: Dictionary)
 signal dimensions_changed(dimensions: Dictionary)
@@ -134,6 +140,7 @@ func _ready() -> void:
 
 	for shape_id in ShapeDefinitions.ORDER:
 		_slots.append({"mode": ToolMode.PLACE, "shape_id": shape_id})
+	_slots.append({"mode": ToolMode.EMPTY})
 	_slots.append({"mode": ToolMode.DELETE})
 	_slots.append({"mode": ToolMode.ROTATE})
 	_slots.append({"mode": ToolMode.EDIT})
@@ -146,8 +153,10 @@ func _ready() -> void:
 	# runs after all its children's, including this one) has actually
 	# connected them to BuildHUD -- otherwise this initial state emits into
 	# a HUD that isn't listening yet and shows blank until the player's
-	# first interaction.
-	call_deferred("select_slot", 0)
+	# first interaction. Empty Hands (ShapeDefinitions.ORDER.size(), the
+	# slot appended right after the five shapes above) rather than slot 0
+	# -- a fresh load shouldn't drop the player into holding a Box.
+	call_deferred("select_slot", ShapeDefinitions.ORDER.size())
 	call_deferred("emit_signal", "snap_toggled", snap_enabled)
 
 
@@ -164,6 +173,8 @@ func _physics_process(_delta: float) -> void:
 
 	if tool_mode == ToolMode.PLACE:
 		_process_place_target()
+	elif tool_mode == ToolMode.EMPTY:
+		pass  # Deliberately inert -- see the class docstring.
 	elif tool_mode != ToolMode.EDIT or not _edit_locked:
 		_process_targeted_object()
 
@@ -489,15 +500,16 @@ func select_color(hex: String) -> void:
 ## GameManager.world_root and SkinManager's caches, so the tool state left
 ## over from before the wipe (an active skin/color that no longer exists,
 ## a Plane's accumulated rotation/hinge nudges) doesn't linger into the
-## fresh build -- same end state as select_slot(0) already reaches on
-## startup (_ready() calls it deferred), just re-triggered on demand.
+## fresh build -- same end state as _ready()'s deferred select_slot() call
+## already reaches on startup (Empty Hands, not holding a shape), just
+## re-triggered on demand.
 func reset_for_new_world() -> void:
 	active_skin_key = ""
 	ghost.set_skin(null)
 	_rotation_offset = 0.0
 	_tilt_offset = 0.0
 	_hinge_mirror = false
-	select_slot(0)
+	select_slot(ShapeDefinitions.ORDER.size())
 
 
 func _dimension_fields_in_context() -> Array:

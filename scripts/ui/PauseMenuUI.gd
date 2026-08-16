@@ -347,15 +347,17 @@ func _make_colors_column() -> PanelContainer:
 ## Built once (the set never changes); _refresh_tools_row() then just
 ## toggles which circle is selected to show the current tool. Slot order
 ## mirrors BuildModeController's own _slots construction -- the five
-## shapes in ShapeDefinitions.ORDER (into _objects_row), then Delete,
-## Rotate, Edit (into _tools_row) -- split into two rows so shapes and
-## tools read as visually distinct, even though they still share one
+## shapes in ShapeDefinitions.ORDER (into _objects_row), then Empty Hands,
+## Delete, Rotate, Edit (into _tools_row) -- split into two rows so shapes
+## and tools read as visually distinct, even though they still share one
 ## slot-index space and one _tool_buttons list under the hood.
 func _build_objects_and_tools() -> void:
 	var index := 0
 	for shape_id in ShapeDefinitions.ORDER:
 		_add_tool_circle(_objects_row, ShapeDefinitions.shape_name(shape_id), index)
 		index += 1
+	_add_tool_circle(_tools_row, "Empty\nHands", index)
+	index += 1
 	_add_tool_circle(_tools_row, "Delete", index)
 	index += 1
 	_add_tool_circle(_tools_row, "Rotate", index)
@@ -387,12 +389,14 @@ func _refresh_tools_row() -> void:
 
 func _current_slot_index() -> int:
 	match _build_controller.tool_mode:
-		BuildModeController.ToolMode.DELETE:
+		BuildModeController.ToolMode.EMPTY:
 			return ShapeDefinitions.ORDER.size()
-		BuildModeController.ToolMode.ROTATE:
+		BuildModeController.ToolMode.DELETE:
 			return ShapeDefinitions.ORDER.size() + 1
-		BuildModeController.ToolMode.EDIT:
+		BuildModeController.ToolMode.ROTATE:
 			return ShapeDefinitions.ORDER.size() + 2
+		BuildModeController.ToolMode.EDIT:
+			return ShapeDefinitions.ORDER.size() + 3
 		_:
 			return ShapeDefinitions.ORDER.find(_build_controller.current_shape_id)
 

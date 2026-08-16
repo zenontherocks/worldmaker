@@ -1,8 +1,9 @@
 extends Control
 class_name BuildHUD
 ## Always-on-screen build status readout (bottom of screen): current tool
-## (a shape to place, or the Delete/Rotate/Edit tool), live dimension
-## values with the scroll-adjustable field marked, and a control reminder.
+## (a shape to place, Empty Hands, or the Delete/Rotate/Edit tool), live
+## dimension values with the scroll-adjustable field marked, and a control
+## reminder.
 ## The whole game is build mode (no separate enter/exit toggle), so this
 ## always shows live status once the first tool_mode_changed signal
 ## arrives. Built procedurally because the set of dimension fields differs
@@ -95,6 +96,11 @@ func on_snap_toggled(enabled: bool) -> void:
 
 func _refresh() -> void:
 	match _tool_mode:
+		BuildModeController.ToolMode.EMPTY:
+			_label.text = (
+				"Tool: Empty Hands (%d/%d)\n" % [_slot_number, _slot_count]
+				+ "[E] change tool  [Esc] menu"
+			)
 		BuildModeController.ToolMode.DELETE:
 			_label.text = (
 				"Tool: Delete (%d/%d)\n" % [_slot_number, _slot_count]

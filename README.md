@@ -144,12 +144,17 @@ does the one rotation that actually matters for it; horizontal facing
 already comes from wherever you're standing, and its base tilt already
 comes from wherever you're looking (see above).
 
-**E** also cycles past the five shapes into three more tools, each of
-which highlights whatever placed block the crosshair is over: **Delete**
-(left-click removes it), **Rotate** (**R**/**Shift+R** spins it
-horizontally, **T**/**Shift+T** tilts it vertically), and **Edit**
-(left-click locks onto it, then **Q**/wheel resize it live the same way
-Place mode sizes a pending placement -- left-click again to let go of it).
+**E** also cycles past the five shapes into four more tools. First,
+**Empty Hands** -- puts down whatever shape was selected and does nothing
+else: no ghost preview, no highlighting placed objects, no action on
+click. It's the tool you start a fresh load in (see below), so you're not
+holding a shape by default, and it's a neutral stop between placing and
+using one of the other three tools, each of which highlights whatever
+placed block the crosshair is over: **Delete** (left-click removes it),
+**Rotate** (**R**/**Shift+R** spins it horizontally, **T**/**Shift+T**
+tilts it vertically), and **Edit** (left-click locks onto it, then
+**Q**/wheel resize it live the same way Place mode sizes a pending
+placement -- left-click again to let go of it).
 
 Press **Esc** to open the pause menu, laid out as a symmetrical cross: a
 compact central panel (**New World**, Save World, Load World, then Resume
@@ -161,11 +166,12 @@ looked on first load — the same end state a browser refresh would reach,
 without the reload. Skins shows a thumbnail circle per loaded skin (click
 one to make it active) plus a **+jpg/png** circle that imports a new one
 directly. Objects & Tools splits into two rows -- the five shapes, then
-Delete/Rotate/Edit -- mirroring the **E** cycle (click any of the eight
-directly instead of cycling through them). Colors offers a second way to
-skin a placement: drag around the ring to pick a hue and inside the
-triangle to pick saturation/value, or type a hex code (e.g. `ff8800`) and
-hit Enter -- either way makes that solid color active immediately, with a
+Empty Hands/Delete/Rotate/Edit -- mirroring the **E** cycle (click any of
+the nine directly instead of cycling through them). Colors offers a
+second way to skin a placement: drag around the ring to pick a hue and
+inside the triangle to pick saturation/value, or type a hex code (e.g.
+`ff8800`) and hit Enter -- either way makes that solid color active
+immediately, with a
 circle appearing below for every color used so far to switch back to one
 later. A color fills the exact same slot a texture skin does, so picking
 one deselects the other.
@@ -436,10 +442,10 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   `WebFilePicker`'s poll keep working while paused. Laid out as a
   symmetrical cross: the central panel (New World, Save World, Load
   World, then Resume last) in the middle, a Skins card above it, an
-  Objects & Tools card below it (two separate rows — shapes, then
-  Delete/Rotate/Edit — sharing one slot-index space and `_tool_buttons`
-  list under the hood, just
-  visually split), a Colors card to its left, and an empty spacer to its
+  Objects & Tools card below it (two separate rows — shapes, then Empty
+  Hands/Delete/Rotate/Edit — sharing one slot-index space and
+  `_tool_buttons` list under the hood, just visually split), a Colors
+  card to its left, and an empty spacer to its
   right (matching the Colors card's width) reserved for later. Every card
   shares one `StyleBoxFlat` (`_card_style`, built once and reused, not
   rebuilt per card) and every heading shares one label style
@@ -451,8 +457,8 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   actually assigns it a width to wrap within, and `VBoxContainer`/
   `PanelContainer` (unlike `CenterContainer`) stretch their child to
   their own width by default. The Objects & Tools rows are built once
-  from `ShapeDefinitions.ORDER` plus Delete/Rotate/Edit and just toggle
-  which circle is `selected`; the Skins row is rebuilt from
+  from `ShapeDefinitions.ORDER` plus Empty Hands/Delete/Rotate/Edit and
+  just toggle which circle is `selected`; the Skins row is rebuilt from
   `SkinManager.skin_keys()` on every open and every fresh import instead,
   since that list actually grows over a session, with each circle
   previewing the actual skin texture instead of showing its filename. Its
@@ -567,6 +573,13 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   the crosshair) and reuses the same Q/wheel dimension-editing code path
   as a pending placement, just writing into `PlaceableObject.
   rebuild_geometry()` instead of the ghost.
+- **A do-nothing tool:** `ToolMode.EMPTY` ("Empty Hands") is the template
+  for a tool slot that's just a neutral state -- `_physics_process()`
+  explicitly no-ops for it before the generic Delete/Rotate/Edit
+  raycast-and-highlight branch would otherwise catch it, and none of
+  `_confirm()`/`_rotate()`/`_tilt()`'s `match` statements have a case for
+  it, so every input it doesn't explicitly handle is silently ignored
+  rather than falling through to another tool's behavior.
 - **Multiple skins per object (per-face):** would mean giving
   `PlaceableObject` an array of skin keys instead of one, and teaching
   `ShapeFactory` to build a `MeshInstance3D` with per-surface materials.
