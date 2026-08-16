@@ -486,7 +486,13 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   material specifically -- Plane has no back face to speak of, so leaving
   Godot's default culling on made the far side invisible instead of
   showing the same skin. Every other shape stays default (closed solids
-  never need their backfaces rendered).
+  never need their backfaces rendered). Shadow casting needed the exact
+  same fix separately -- it's an independent culling setting
+  (`MeshInstance3D.cast_shadow`, left at Godot's default
+  front-face-only), not tied to the material's `cull_mode` at all, so a
+  Plane cast a shadow only when its front face happened to point toward
+  the light until `cast_shadow` was also set to
+  `SHADOW_CASTING_SETTING_DOUBLE_SIDED`.
 
 - **UI buttons opt out of keyboard focus.** Every procedurally-built
   `Button` sets `focus_mode = Control.FOCUS_NONE`. Godot's built-in

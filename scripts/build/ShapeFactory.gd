@@ -148,6 +148,12 @@ static func create_instance(shape_id: int, dims: Dictionary, material: Material 
 			material = StandardMaterial3D.new()
 		if material is StandardMaterial3D:
 			material.cull_mode = BaseMaterial3D.CULL_DISABLED
+		# Shadow casting is a separate pass with its own independent
+		# culling, unaffected by the material's cull_mode above -- left
+		# at Godot's default (front-face-only), a Plane only casts a
+		# shadow when its front face happens to point toward the light,
+		# and casts none at all from the other orientation.
+		mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_DOUBLE_SIDED
 	if material:
 		mesh_instance.material_override = material
 	body.add_child(mesh_instance)
