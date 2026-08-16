@@ -144,18 +144,19 @@ horizontally, **T**/**Shift+T** tilts it vertically), and **Edit**
 (left-click locks onto it, then **Q**/wheel resize it live the same way
 Place mode sizes a pending placement -- left-click again to let go of it).
 
-Press **Esc** to open the pause menu: a compact panel (Resume, Load Skin,
-Save World, Load World) framed by two rows of circles stacked directly
-above and below it, wrapping into a row or two as needed -- a Tools row
-below it mirroring the **E** cycle (click any of the eight tools directly
-instead of cycling through them) and a Skins row above it showing a
-thumbnail circle per loaded skin (click one to make it active, instead of
-whichever was imported most recently). A Colors column to the left offers
-a second way to skin a placement: type a hex code (e.g. `ff8800`) and hit
-Enter to make that solid color active, with a circle appearing below the
-input for every color used so far to switch back to one later. A color
-fills the exact same slot a texture skin does, so picking one deselects
-the other.
+Press **Esc** to open the pause menu, laid out as a symmetrical cross: a
+compact central panel (Resume, Save World, Load World) with a labeled
+**Skins** card above it, a labeled **Objects & Tools** card below it, a
+**Colors** card to its left, and space reserved to the right for
+something later. Skins shows a thumbnail circle per loaded skin (click
+one to make it active) plus a **+jpg/png** circle that imports a new one
+directly. Objects & Tools splits into two rows -- the five shapes, then
+Delete/Rotate/Edit -- mirroring the **E** cycle (click any of the eight
+directly instead of cycling through them). Colors offers a second way to
+skin a placement: type a hex code (e.g. `ff8800`) and hit Enter to make
+that solid color active, with a circle appearing below the input for
+every color used so far to switch back to one later. A color fills the
+exact same slot a texture skin does, so picking one deselects the other.
 
 In the editor (and any desktop export) the pause menu always uses ordinary
 native file dialogs — real OS file pickers reading/writing the actual
@@ -365,23 +366,32 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   mode) uses Godot's default `PROCESS_MODE_PAUSABLE`, so it freezes for
   free with no per-script gating needed. The menu itself (and its
   `FileDialog`s) opts in to `PROCESS_MODE_ALWAYS` so its buttons and
-  `WebFilePicker`'s poll keep working while paused. Its central panel holds
-  only Resume and the three file actions; Tools and Skins are two rows of
-  `CircleButton`s stacked directly below/above that panel in the same
-  centered `VBoxContainer` instead of being crammed inside it (the mouse is
-  only a visible, clickable cursor while paused, so they can't live on the
-  always-on `BuildHUD`). Nesting them alongside the (fixed-width) panel
-  rather than in their own separately-anchored container is what makes them
-  wrap into "a row or two" as circles are added — `HFlowContainer` only
-  wraps into multiple lines when its parent actually assigns it a width to
-  wrap within, and `VBoxContainer` (unlike `CenterContainer`) stretches
-  children to its own width by default. The Tools row is built once from
-  `ShapeDefinitions.ORDER` plus Delete/Rotate/Edit and just toggles which
-  circle is `selected` to show the current selection; the Skins row is
-  rebuilt from `SkinManager.skin_keys()` on every open and every fresh
-  import instead, since that list actually grows over a session, with each
-  circle previewing the actual skin texture instead of showing its
-  filename.
+  `WebFilePicker`'s poll keep working while paused. Laid out as a
+  symmetrical cross: the central panel (Resume + the two remaining file
+  actions) in the middle, a Skins card above it, an Objects & Tools card
+  below it (two separate rows — shapes, then Delete/Rotate/Edit — sharing
+  one slot-index space and `_tool_buttons` list under the hood, just
+  visually split), a Colors card to its left, and an empty spacer to its
+  right (matching the Colors card's width) reserved for later. Every card
+  shares one `StyleBoxFlat` (`_card_style`, built once and reused, not
+  rebuilt per card) and every heading shares one label style
+  (`_make_section_label()`) — pure code, no image/font assets, so the
+  visual polish costs nothing in download size. Nesting each row inside
+  its card's `VBoxContainer` rather than a separately-anchored container
+  is what makes them wrap into "a row or two" as circles are added —
+  `HFlowContainer` only wraps into multiple lines when its parent
+  actually assigns it a width to wrap within, and `VBoxContainer`/
+  `PanelContainer` (unlike `CenterContainer`) stretch their child to
+  their own width by default. The Objects & Tools rows are built once
+  from `ShapeDefinitions.ORDER` plus Delete/Rotate/Edit and just toggle
+  which circle is `selected`; the Skins row is rebuilt from
+  `SkinManager.skin_keys()` on every open and every fresh import instead,
+  since that list actually grows over a session, with each circle
+  previewing the actual skin texture instead of showing its filename. Its
+  first circle, labeled **+jpg/png**, triggers the same import flow the
+  old standalone "Load Skin" button did (now removed) — there's no
+  dedicated "clear to unskinned" circle anymore; picking a Color already
+  overrides any texture skin, which covers the practical case.
 
 - **Skins are embedded in the world file, keyed by name.** A placed object
   stores its skin's file name (`skin_key`) in `"objects"`, and

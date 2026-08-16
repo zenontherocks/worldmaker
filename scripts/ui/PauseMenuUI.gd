@@ -10,15 +10,26 @@ class_name PauseMenuUI
 ## set_build_controller() since that one isn't global (it lives under the
 ## player's camera).
 ##
-## The central panel only holds Resume plus the three file actions -- Tools
-## and Skins are picked via two rows of CircleButtons stacked directly
-## below/above that panel (in the same centered column), and solid colors
-## via a Colors column to its left (hex input + a row of swatches for
-## colors already used). None of this can live on the always-on BuildHUD:
-## the mouse is pointer-locked (invisible, driving camera look) during live
+## Laid out as a symmetrical cross: the central panel (Resume + the two
+## remaining file actions) in the middle, a Skins card above it, an
+## Objects & Tools card below it (two separate rows -- shapes, then
+## Delete/Rotate/Edit), a Colors card to its left, and an empty spacer to
+## its right (matching the Colors card's width) reserved for something
+## later. Every card shares one StyleBoxFlat (_card_style) and every
+## section heading shares one label style (_make_section_label()) so the
+## whole thing reads as one uniform layout instead of loose floating rows
+## -- all built from code (no image/font assets), so this stays free in
+## download size. None of it can live on the always-on BuildHUD: the mouse
+## is pointer-locked (invisible, driving camera look) during live
 ## gameplay and only becomes a visible, clickable cursor once _open() below
 ## switches to MOUSE_MODE_VISIBLE, so anything clickable has to be part of
 ## this paused overlay.
+##
+## The Skins card's first circle ("+jpg/png") triggers the same import
+## flow the center panel's file actions use -- there's deliberately no
+## separate "Load Skin" button anymore, and no dedicated "clear to
+## unskinned" circle either (picking a Color already overrides any texture
+## skin, which covers the practical case).
 ##
 ## A solid color is not a separate concept from a texture skin -- it fills
 ## the exact same active_skin_key slot on BuildModeController (as its own
@@ -41,7 +52,14 @@ var _paused: bool = false
 var _content: PanelContainer
 var _build_controller: BuildModeController = null
 
-var _tools_row: HFlowContainer
+## Shared by every card (Skins/Objects & Tools/Colors/the central panel)
+## so they read as one uniform layout -- built once in _ready(), not per
+## card, since a StyleBoxFlat is just rendering parameters and Godot
+## allows the same Resource to back multiple theme overrides safely.
+var _card_style: StyleBoxFlat
+
+var _objects_row: HFlowContainer  ## the five shapes
+var _tools_row: HFlowContainer  ## Delete/Rotate/Edit only
 var _tool_buttons: Array = []  ## [{"circle": CircleButton, "slot_index": int}]
 
 var _skins_row: HFlowContainer
@@ -76,6 +94,8 @@ func _ready() -> void:
 	layer = 10
 	visible = false
 
+	_card_style = _make_card_style()
+
 	var backdrop := ColorRect.new()
 	backdrop.color = Color(0, 0, 0, 0.55)
 	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -93,31 +113,38 @@ func _ready() -> void:
 	centering.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	backdrop.add_child(centering)
 
-	# CenterContainer only centers a single child, so everything else lives
-	# inside this HBoxContainer: the Colors column on the left, and the
-	# existing Skins/panel/Tools column on the right.
+	# CenterContainer only centers a single child, so the whole cross
+	# layout lives inside this HBoxContainer: Colors card (left), the
+	# Skins/panel/Objects&Tools column (center), an empty spacer (right,
+	# same width as the Colors card) reserved for something later.
 	var outer_hbox := HBoxContainer.new()
 	outer_hbox.add_theme_constant_override("separation", 16)
 	centering.add_child(outer_hbox)
 
 	outer_hbox.add_child(_make_colors_column())
 
-	# Skins row, the panel, and Tools row stack as one column -- this also
-	# solves the flow rows' wrapping: a FlowContainer only wraps into
-	# multiple lines when its parent actually assigns it a width to wrap
-	# within, and VBoxContainer (unlike CenterContainer) stretches children
-	# to its own width by default -- so each row ends up exactly as wide as
-	# the panel and wraps into "a row or two" as more circles get added,
-	# instead of every circle stacking into its own single-item line.
+	# Skins card, the central panel, and the Objects & Tools card stack as
+	# one column -- this also solves the flow rows' wrapping: a
+	# FlowContainer only wraps into multiple lines when its parent
+	# actually assigns it a width to wrap within, and VBoxContainer
+	# (unlike CenterContainer) stretches children to its own width by
+	# default -- so each row ends up exactly as wide as the panel and
+	# wraps into "a row or two" as more circles get added, instead of
+	# every circle stacking into its own single-item line.
 	var outer_vbox := VBoxContainer.new()
 	outer_vbox.add_theme_constant_override("separation", 16)
 	outer_hbox.add_child(outer_vbox)
 
+	var skins_section := VBoxContainer.new()
+	skins_section.add_theme_constant_override("separation", 8)
+	skins_section.add_child(_make_section_label("Skins"))
 	_skins_row = _make_circle_row()
-	outer_vbox.add_child(_skins_row)
+	skins_section.add_child(_skins_row)
+	outer_vbox.add_child(_make_section_card(skins_section))
 
 	_content = PanelContainer.new()
 	_content.custom_minimum_size = Vector2(380, 0)
+	_content.add_theme_stylebox_override("panel", _card_style)
 	outer_vbox.add_child(_content)
 
 	var vbox := VBoxContainer.new()
@@ -135,12 +162,6 @@ func _ready() -> void:
 	resume_button.focus_mode = Control.FOCUS_NONE
 	resume_button.pressed.connect(_close)
 	vbox.add_child(resume_button)
-
-	var import_skin_button := Button.new()
-	import_skin_button.text = "Load Skin (PNG/JPG)"
-	import_skin_button.focus_mode = Control.FOCUS_NONE
-	import_skin_button.pressed.connect(_on_import_skin_pressed)
-	vbox.add_child(import_skin_button)
 
 	var export_button := Button.new()
 	export_button.text = "Save World (JSON)"
@@ -165,9 +186,23 @@ func _ready() -> void:
 	hint.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
 	vbox.add_child(hint)
 
+	var objects_tools_section := VBoxContainer.new()
+	objects_tools_section.add_theme_constant_override("separation", 8)
+	objects_tools_section.add_child(_make_section_label("Objects & Tools"))
+	_objects_row = _make_circle_row()
+	objects_tools_section.add_child(_objects_row)
 	_tools_row = _make_circle_row()
-	outer_vbox.add_child(_tools_row)
-	_build_tools_row()
+	objects_tools_section.add_child(_tools_row)
+	outer_vbox.add_child(_make_section_card(objects_tools_section))
+	_build_objects_and_tools()
+
+	# Empty spacer, same width as the Colors card, so the cross layout
+	# stays visually balanced -- nothing lives here yet, reserved for a
+	# future right-side section.
+	var right_spacer := Control.new()
+	right_spacer.custom_minimum_size = Vector2(200, 0)
+	right_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	outer_hbox.add_child(right_spacer)
 
 	_skin_dialog = _make_file_dialog(
 		FileDialog.FILE_MODE_OPEN_FILE,
@@ -201,8 +236,8 @@ func _ready() -> void:
 
 
 ## A wrapping row of CircleButtons, centered on each line it wraps to --
-## used for the Skins row (above the panel), Tools row (below it), and the
-## Colors column's own row of swatches.
+## used for the Skins row, the Objects row, the Tools row, and the Colors
+## card's own row of swatches.
 func _make_circle_row() -> HFlowContainer:
 	var row := HFlowContainer.new()
 	row.alignment = FlowContainer.ALIGNMENT_CENTER
@@ -210,55 +245,88 @@ func _make_circle_row() -> HFlowContainer:
 	return row
 
 
-## The left-side column: a muted heading, a hex text input, and a wrapping
-## row of solid-color swatches for colors already used. Narrower than the
-## panel (custom_minimum_size below) so it reads as its own column rather
-## than a second full-width row -- still wide enough for a few swatches per
-## line before wrapping, same "give the row a real width" fix the Skins/
-## Tools rows rely on (this VBoxContainer stretches _colors_row to its own
-## width, same as outer_vbox does for those).
-func _make_colors_column() -> VBoxContainer:
+## One shared translucent-rounded-rect style for every card in this menu
+## (Skins/Objects & Tools/Colors/the central panel) so they read as one
+## uniform layout -- pure code, no image asset, so this costs nothing in
+## download size.
+func _make_card_style() -> StyleBoxFlat:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(1, 1, 1, 0.06)
+	style.border_color = Color(1, 1, 1, 0.12)
+	style.set_border_width_all(1)
+	style.set_corner_radius_all(10)
+	style.set_content_margin_all(10)
+	return style
+
+
+## Consistent section heading style (Skins/Objects & Tools/Colors) --
+## bumped size and a brighter tone than the muted hint text below the
+## central panel, so headings read as headers rather than fine print.
+func _make_section_label(text: String) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 15)
+	label.add_theme_color_override("font_color", Color(0.85, 0.85, 0.95))
+	return label
+
+
+func _make_section_card(content: Control) -> PanelContainer:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _card_style)
+	panel.add_child(content)
+	return panel
+
+
+## The left-side card: a heading, a hex text input, and a wrapping row of
+## solid-color swatches for colors already used. Narrower than the panel
+## (custom_minimum_size below) so it reads as its own column rather than a
+## second full-width row -- still wide enough for a few swatches per line
+## before wrapping, same "give the row a real width" fix the Skins/
+## Objects/Tools rows rely on (this VBoxContainer stretches _colors_row to
+## its own width, same as outer_vbox does for those).
+func _make_colors_column() -> PanelContainer:
 	var column := VBoxContainer.new()
 	column.custom_minimum_size = Vector2(200, 0)
 	column.add_theme_constant_override("separation", 8)
 
-	var label := Label.new()
-	label.text = "Colors"
-	label.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
-	column.add_child(label)
+	column.add_child(_make_section_label("Colors"))
 
 	_hex_input = LineEdit.new()
-	_hex_input.placeholder_text = "RRGGBB"
+	_hex_input.placeholder_text = "#hexcode"
 	_hex_input.text_submitted.connect(_on_hex_color_submitted)
 	column.add_child(_hex_input)
 
 	_colors_row = _make_circle_row()
 	column.add_child(_colors_row)
 
-	return column
+	return _make_section_card(column)
 
 
-## Built once (the set of tools never changes); _refresh_tools_row() then
-## just toggles which circle is selected to show the current tool.
-## Slot order mirrors BuildModeController's own _slots construction --
-## the five shapes in ShapeDefinitions.ORDER, then Delete, Rotate, Edit.
-func _build_tools_row() -> void:
+## Built once (the set never changes); _refresh_tools_row() then just
+## toggles which circle is selected to show the current tool. Slot order
+## mirrors BuildModeController's own _slots construction -- the five
+## shapes in ShapeDefinitions.ORDER (into _objects_row), then Delete,
+## Rotate, Edit (into _tools_row) -- split into two rows so shapes and
+## tools read as visually distinct, even though they still share one
+## slot-index space and one _tool_buttons list under the hood.
+func _build_objects_and_tools() -> void:
 	var index := 0
 	for shape_id in ShapeDefinitions.ORDER:
-		_add_tool_circle(ShapeDefinitions.shape_name(shape_id), index)
+		_add_tool_circle(_objects_row, ShapeDefinitions.shape_name(shape_id), index)
 		index += 1
-	_add_tool_circle("Delete", index)
+	_add_tool_circle(_tools_row, "Delete", index)
 	index += 1
-	_add_tool_circle("Rotate", index)
+	_add_tool_circle(_tools_row, "Rotate", index)
 	index += 1
-	_add_tool_circle("Edit", index)
+	_add_tool_circle(_tools_row, "Edit", index)
 
 
-func _add_tool_circle(label: String, slot_index: int) -> void:
+func _add_tool_circle(row: HFlowContainer, label: String, slot_index: int) -> void:
 	var circle := CircleButton.new()
 	circle.label_text = label
 	circle.pressed.connect(_on_tool_button_pressed.bind(slot_index))
-	_tools_row.add_child(circle)
+	row.add_child(circle)
 	_tool_buttons.append({"circle": circle, "slot_index": slot_index})
 
 
@@ -299,11 +367,12 @@ func _refresh_skins_row() -> void:
 	if _build_controller == null:
 		return
 
-	var none_circle := CircleButton.new()
-	none_circle.label_text = "None"
-	none_circle.selected = _build_controller.active_skin_key == ""
-	none_circle.pressed.connect(_on_skin_button_pressed.bind(""))
-	_skins_row.add_child(none_circle)
+	# An action, not a persisted selection -- never shown selected, unlike
+	# every other circle in this row.
+	var import_circle := CircleButton.new()
+	import_circle.label_text = "+jpg/png"
+	import_circle.pressed.connect(_on_import_skin_pressed)
+	_skins_row.add_child(import_circle)
 
 	for skin_key in SkinManager.skin_keys():
 		var circle := CircleButton.new()
@@ -326,9 +395,7 @@ func _on_skin_button_pressed(skin_key: String) -> void:
 ## Same rebuild-from-scratch approach as _refresh_skins_row(), and for the
 ## same reason: this only runs on open/select, never per-frame.
 ## SkinManager.used_colors() already reflects every color entered this
-## session or pulled in from a loaded world file. No "None" entry here --
-## the Skins row's own None circle already clears to unskinned regardless
-## of whether a texture or a color was previously active.
+## session or pulled in from a loaded world file.
 func _refresh_colors_row() -> void:
 	for child in _colors_row.get_children():
 		child.queue_free()
