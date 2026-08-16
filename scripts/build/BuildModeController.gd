@@ -91,6 +91,20 @@ var _rotation_offset: float = 0.0
 ## specifically R/Shift+R tips it toward standing up vertical instead.
 var _tilt_offset: float = 0.0
 
+## Which of the two hinge/corner directions _compute_plane_edge_snap()
+## uses (its hinge_sign). Set directly by T/Shift+T for a pending Plane
+## placement (see _tilt()) -- otherwise unused there, since R/Shift+R
+## already owns the coplanar/standing tilt nudge for a Plane. Not derived
+## from _tilt_offset/desired-tilt math: that was tried first and turned
+## out to only ever resolve to one direction in ordinary play (the sum of
+## two always-non-negative quantities), reachable the "long way" only by
+## nudging _tilt_offset most of the way around a full turn -- not a real,
+## usable control. Persists across placements, same as _rotation_offset/
+## _tilt_offset (neither of those resets either), which matters for a
+## repeated pattern (e.g. a staircase) that wants the same direction
+## several placements in a row.
+var _hinge_mirror: bool = false
+
 var _has_valid_target: bool = false
 ## Cached every physics frame by _process_place_target() (whichever of its
 ## three cases applied, with _rotation_offset/_tilt_offset already folded
@@ -263,7 +277,13 @@ func _compute_plane_edge_snap(target: PlaceableObject, hit_point: Vector3) -> vo
 	var desired_tilt := _auto_plane_tilt() + _tilt_offset
 	var relative_tilt := wrapf(desired_tilt - target.rotation.x, -PI, PI)
 	var standing := absf(relative_tilt) > PI * 0.25
-	var hinge_sign := -1.0 if relative_tilt < 0.0 else 1.0
+	# Which of the two hinge/corner directions -- deliberately NOT derived
+	# from relative_tilt (that was tried first: _auto_plane_tilt() and
+	# _tilt_offset are both always non-negative, so their sum practically
+	# never goes negative in ordinary play, meaning this would resolve to
+	# the same direction essentially every time -- not a usable control).
+	# _hinge_mirror is instead set directly by T/Shift+T (see _tilt()).
+	var hinge_sign := -1.0 if _hinge_mirror else 1.0
 
 	var local_hit: Vector3 = target.to_local(hit_point)
 	var x_ratio := absf(local_hit.x) / target_half_width if target_half_width > 0.0 else 0.0
@@ -517,13 +537,20 @@ func _rotate(delta_degrees: float) -> void:
 
 
 ## T/Shift+T: tips the targeted object around a horizontal axis instead
-## (e.g. standing a cylinder up vs. laying it on its side). Rotate-tool
-## only -- there's no equivalent for a pending placement.
+## (e.g. standing a cylinder up vs. laying it on its side) in Rotate mode.
+## For a pending Plane placement, T/Shift+T are otherwise unused (R/
+## Shift+R already own the coplanar/standing tilt nudge -- see _rotate()),
+## so they're repurposed here to directly set _hinge_mirror: T picks the
+## "primary" hinge/corner direction, Shift+T the other one, always
+## deterministically (not a toggle that can drift out of sync with what's
+## shown), regardless of whatever direction was picked before.
 func _tilt(delta_degrees: float) -> void:
 	if tool_mode == ToolMode.ROTATE and _highlighted_object != null and is_instance_valid(_highlighted_object):
 		_highlighted_object.rotation.x = wrapf(
 			_highlighted_object.rotation.x + deg_to_rad(delta_degrees), 0.0, TAU
 		)
+	elif tool_mode == ToolMode.PLACE and current_shape_id == ShapeDefinitions.ShapeType.PLANE:
+		_hinge_mirror = delta_degrees < 0.0
 
 
 func _active_dimension_key() -> String:

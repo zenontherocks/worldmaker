@@ -82,7 +82,7 @@ small autoload services.
    | `build_cycle_dimension` | Q | Select which dimension the scroll wheel edits (Place, or Edit once locked on) |
    | `build_dimension_increase` / `build_dimension_decrease` | Mouse wheel up/down | Adjust the active dimension |
    | `build_rotate_cw` / `build_rotate_ccw` | R / Shift+R | Rotate 15° around Y (horizontal facing) -- tips a pending Plane vertical instead |
-   | `build_tilt_cw` / `build_tilt_ccw` | T / Shift+T | Tilt 15° around X (Rotate tool only) |
+   | `build_tilt_cw` / `build_tilt_ccw` | T / Shift+T | Tilt 15° around X (Rotate tool); picks which of the two hinge/corner directions a pending Plane snapped to another Plane's edge uses |
    | `build_place` | Left click | Place the current shape |
    | `build_toggle_snap` | G | Toggle grid-snap + wall/edge surface-snapping together |
 
@@ -118,8 +118,14 @@ one -- both "give me a wall"), and looking distinctly up/down always
 produces a *horizontal* result (tiling a floor flat, or capping a wall's
 edge with a horizontal piece -- both "give me a floor/ceiling"). **R**/
 **Shift+R** always nudges further on top of whichever default this picks.
-This is how actual buildings (a floor, walls rising from its edges, walls
-extended into longer walls) get built out of Planes.
+Hinging off the *side* edge of an already-standing wall (rather than a
+flat tile) forms a **corner** instead -- two walls meeting at a shared
+vertical edge -- and **T**/**Shift+T** pick which of the two possible
+corner directions (or, for a flat target, which of the two directions a
+wall stands up in) to use, always deterministically regardless of camera
+angle. This is how actual buildings (a floor, walls rising from its
+edges, walls extended into longer walls, walls meeting at corners) get
+built out of Planes.
 
 Away from a Plane-specific surface, both position and facing snap to a
 grid so shapes actually line up with each other instead of just sitting
@@ -298,6 +304,27 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   assist; the underlying flush `ShapeFactory.surface_offset()` (correct
   per-axis distance from whichever face was hit, not just "up") is a
   correctness fix rather than an assist, so it always applies regardless.
+
+- **Plane-edge hinging picks a "corner" when the target is already
+  standing.** A plane's local width (X) axis is always purely
+  horizontal regardless of its own tilt; hinging off a target Plane's
+  edge only works when that edge's own direction is *also* always
+  horizontal, which is true for the target's local X axis (why hinging
+  off the top/bottom edge always works, whatever the target's tilt) but
+  only true for the target's local Z axis while the target itself is
+  flat. Once the target is already standing, that axis is vertical
+  instead, and no horizontal width axis can align with it -- so
+  `_compute_plane_edge_snap()` treats that specific combination (side
+  edge, target already standing) as a corner instead: the new panel
+  stays standing (no tilt flip) with its *length*, not width, running
+  along the shared vertical edge. Which of the two hinge/corner
+  directions gets used (`hinge_sign`) is set directly by **T**/**Shift+T**
+  for a pending Plane placement (otherwise unused there, since
+  **R**/**Shift+R** already own the coplanar/standing tilt nudge) rather
+  than derived from the same tilt-offset math driving that nudge --
+  deriving it that way was tried first and turned out to only ever
+  resolve to one direction in ordinary play, since `_auto_plane_tilt()`
+  and `_tilt_offset` are both always non-negative.
 
 - **Procedural UI instead of hand-authored `.tscn` Control trees.** The
   pause menu and HUD are built in code (`PauseMenuUI.gd`,
