@@ -90,13 +90,17 @@ func load_from_json_text(text: String) -> bool:
 		for skin_key in skins:
 			SkinManager.load_skin_from_bytes(Marshalls.base64_to_raw(skins[skin_key]), skin_key)
 
-	_clear_world()
+	clear_world()
 	for object_data in parsed["objects"]:
 		_spawn_object(object_data)
 	return true
 
 
-func _clear_world() -> void:
+## Public so the pause menu's "New World" button can wipe the build without
+## also loading a JSON file -- load_from_json_text() above calls straight
+## into this too, so both paths reset id counters/notify listeners the
+## same way.
+func clear_world() -> void:
 	if not GameManager.world_root:
 		return
 	for child in GameManager.world_root.get_children():

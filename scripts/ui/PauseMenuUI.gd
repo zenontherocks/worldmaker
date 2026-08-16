@@ -10,9 +10,9 @@ class_name PauseMenuUI
 ## set_build_controller() since that one isn't global (it lives under the
 ## player's camera).
 ##
-## Laid out as a symmetrical cross: the central panel (Resume + the two
-## remaining file actions) in the middle, a Skins card above it, an
-## Objects & Tools card below it (two separate rows -- shapes, then
+## Laid out as a symmetrical cross: the central panel (New World, Save
+## World, Load World, then Resume last) in the middle, a Skins card above
+## it, an Objects & Tools card below it (two separate rows -- shapes, then
 ## Delete/Rotate/Edit), a Colors card to its left, and an empty spacer to
 ## its right (matching the Colors card's width) reserved for something
 ## later. Every card shares one StyleBoxFlat (_card_style) and every
@@ -185,11 +185,11 @@ func _ready() -> void:
 	title.add_theme_font_size_override("font_size", 22)
 	vbox.add_child(title)
 
-	var resume_button := Button.new()
-	resume_button.text = "Resume"
-	resume_button.focus_mode = Control.FOCUS_NONE
-	resume_button.pressed.connect(_close)
-	vbox.add_child(resume_button)
+	var new_world_button := Button.new()
+	new_world_button.text = "New World"
+	new_world_button.focus_mode = Control.FOCUS_NONE
+	new_world_button.pressed.connect(_on_new_world_pressed)
+	vbox.add_child(new_world_button)
 
 	var export_button := Button.new()
 	export_button.text = "Save World (JSON)"
@@ -202,6 +202,12 @@ func _ready() -> void:
 	import_world_button.focus_mode = Control.FOCUS_NONE
 	import_world_button.pressed.connect(_on_import_world_pressed)
 	vbox.add_child(import_world_button)
+
+	var resume_button := Button.new()
+	resume_button.text = "Resume"
+	resume_button.focus_mode = Control.FOCUS_NONE
+	resume_button.pressed.connect(_close)
+	vbox.add_child(resume_button)
 
 	_status_label = Label.new()
 	_status_label.text = ""
@@ -611,6 +617,26 @@ func _on_skin_load_succeeded(_texture: Texture2D, skin_key: String) -> void:
 func _on_skin_load_failed(reason: String) -> void:
 	push_warning("Skin load failed: %s" % reason)
 	_set_status("Skin load failed: %s" % reason, true)
+
+
+## Wipes the current build back to a blank slate -- placed objects,
+## imported skins, and used colors all gone, and the active tool/skin/
+## rotation state reset -- without the page reload a browser "refresh"
+## would need. Order matters: the world's objects reference skin_keys that
+## SkinManager.reset() is about to invalidate, so the world has to go
+## first; BuildModeController.reset_for_new_world() goes last since it
+## also clears active_skin_key, which would otherwise still point at a
+## skin/color that just stopped existing.
+func _on_new_world_pressed() -> void:
+	SaveLoadManager.clear_world()
+	SkinManager.reset()
+	if _build_controller:
+		_build_controller.reset_for_new_world()
+	_hex_input.text = ""
+	_set_status("New world started")
+	_refresh_tools_row()
+	_refresh_skins_row()
+	_refresh_colors_row()
 
 
 func _on_export_pressed() -> void:

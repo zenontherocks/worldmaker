@@ -485,6 +485,21 @@ func select_color(hex: String) -> void:
 	ghost.set_skin(null)
 
 
+## Public: called by the pause menu's "New World" button after it clears
+## GameManager.world_root and SkinManager's caches, so the tool state left
+## over from before the wipe (an active skin/color that no longer exists,
+## a Plane's accumulated rotation/hinge nudges) doesn't linger into the
+## fresh build -- same end state as select_slot(0) already reaches on
+## startup (_ready() calls it deferred), just re-triggered on demand.
+func reset_for_new_world() -> void:
+	active_skin_key = ""
+	ghost.set_skin(null)
+	_rotation_offset = 0.0
+	_tilt_offset = 0.0
+	_hinge_mirror = false
+	select_slot(0)
+
+
 func _dimension_fields_in_context() -> Array:
 	if tool_mode == ToolMode.EDIT and _edit_locked and _highlighted_object != null:
 		return ShapeDefinitions.dimension_fields(_highlighted_object.shape_id)

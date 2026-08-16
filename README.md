@@ -152,10 +152,13 @@ horizontally, **T**/**Shift+T** tilts it vertically), and **Edit**
 Place mode sizes a pending placement -- left-click again to let go of it).
 
 Press **Esc** to open the pause menu, laid out as a symmetrical cross: a
-compact central panel (Resume, Save World, Load World) with a labeled
-**Skins** card above it, a labeled **Objects & Tools** card below it, a
-**Colors** card to its left, and space reserved to the right for
-something later. Skins shows a thumbnail circle per loaded skin (click
+compact central panel (**New World**, Save World, Load World, then Resume
+last) with a labeled **Skins** card above it, a labeled **Objects &
+Tools** card below it, a **Colors** card to its left, and space reserved
+to the right for something later. **New World** clears every placed
+object and every imported skin/color, resetting the build back to how it
+looked on first load — the same end state a browser refresh would reach,
+without the reload. Skins shows a thumbnail circle per loaded skin (click
 one to make it active) plus a **+jpg/png** circle that imports a new one
 directly. Objects & Tools splits into two rows -- the five shapes, then
 Delete/Rotate/Edit -- mirroring the **E** cycle (click any of the eight
@@ -431,10 +434,11 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   free with no per-script gating needed. The menu itself (and its
   `FileDialog`s) opts in to `PROCESS_MODE_ALWAYS` so its buttons and
   `WebFilePicker`'s poll keep working while paused. Laid out as a
-  symmetrical cross: the central panel (Resume + the two remaining file
-  actions) in the middle, a Skins card above it, an Objects & Tools card
-  below it (two separate rows — shapes, then Delete/Rotate/Edit — sharing
-  one slot-index space and `_tool_buttons` list under the hood, just
+  symmetrical cross: the central panel (New World, Save World, Load
+  World, then Resume last) in the middle, a Skins card above it, an
+  Objects & Tools card below it (two separate rows — shapes, then
+  Delete/Rotate/Edit — sharing one slot-index space and `_tool_buttons`
+  list under the hood, just
   visually split), a Colors card to its left, and an empty spacer to its
   right (matching the Colors card's width) reserved for later. Every card
   shares one `StyleBoxFlat` (`_card_style`, built once and reused, not
@@ -484,6 +488,23 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   building their own material, which is also what makes picking a color
   automatically deselect a texture skin and vice versa: there's only one
   slot to hold either.
+
+- **"New World" reuses the same clear-and-reset SaveLoadManager already
+  did internally for loading a file, rather than a separate wipe path.**
+  `SaveLoadManager.load_from_json_text()` always clears the existing build
+  before spawning a loaded one's objects; that clearing step
+  (`clear_world()`) is now public so the pause menu's **New World** button
+  can call it directly with nothing to spawn afterward. It frees every
+  child under `GameManager.world_root`, resets the id counter, and emits
+  `world_cleared`. The button also calls `SkinManager.reset()` (wipes
+  imported textures and used colors — there's nothing left in the world to
+  reference them once it's cleared) and
+  `BuildModeController.reset_for_new_world()` (clears `active_skin_key`
+  and the ghost's preview skin, since both might otherwise still point at
+  a texture/color that just stopped existing, plus the accumulated
+  rotation/hinge nudges and current tool, via the same `select_slot(0)`
+  call `_ready()` already makes on startup) — same net effect as an actual
+  page refresh, without needing one.
 
 - **The color wheel's ring+triangle is one shared piece of math, not two.**
   `ColorWheel.gd` draws its saturation/value triangle via `draw_polygon()`

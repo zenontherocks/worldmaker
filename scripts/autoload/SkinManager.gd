@@ -109,6 +109,18 @@ func used_colors() -> Array:
 	return _used_colors.duplicate()
 
 
+## Wipes every imported texture and used color -- the pause menu's "New
+## World" button calls this alongside SaveLoadManager.clear_world() so a
+## fresh build doesn't still offer skins/colors left over from whatever was
+## just cleared. No signal to emit here: skin_loaded/color_used exist to
+## announce something being *added* to the Skins/Colors rows, and the
+## caller already knows to just rebuild those rows from scratch afterward.
+func reset() -> void:
+	_cache.clear()
+	_bytes_cache.clear()
+	_used_colors.clear()
+
+
 ## The one place a skin_key (color or texture, or "" for none) turns into
 ## an actual material -- used both for a live placement and for rebuilding
 ## a placed object on world-load, so those two paths can't drift apart on
