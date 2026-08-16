@@ -234,12 +234,13 @@ func _compute_wall_mount(point: Vector3, normal: Vector3) -> void:
 ## Snaps a pending Plane against whichever edge of an already-placed target
 ## Plane the raycast landed nearest, so Planes can either tile edge-to-edge
 ## (flush and coplanar with the target) or stand up as a hinge rising from
-## that edge -- e.g. a wall rising from the edge of a floor tile. Which of
-## the two happens defaults to the same look-direction auto-detection as a
-## targetless placement (_auto_plane_tilt()): aiming roughly level picks
-## standing, aiming down/up picks coplanar, matching the target's own
-## orientation -- R/Shift+R still nudges the choice either way on top of
-## that. Works entirely in the target's own local frame, so it honors
+## that edge -- e.g. a wall rising from the edge of a floor tile, or (see
+## corner_hinge below) two walls meeting at a shared vertical edge. Which
+## of the two happens defaults to the same look-direction auto-detection
+## as a targetless placement (_auto_plane_tilt()): aiming roughly level
+## picks standing, aiming down/up picks coplanar, matching the target's
+## own orientation -- R/Shift+R still nudges the choice either way on top
+## of that. Works entirely in the target's own local frame, so it honors
 ## however that target is currently oriented (flat, wall-mounted, anything
 ## the Rotate tool left it at) without needing to special-case any of that.
 func _compute_plane_edge_snap(target: PlaceableObject, hit_point: Vector3) -> void:
@@ -267,13 +268,42 @@ func _compute_plane_edge_snap(target: PlaceableObject, hit_point: Vector3) -> vo
 	var local_hit: Vector3 = target.to_local(hit_point)
 	var x_ratio := absf(local_hit.x) / target_half_width if target_half_width > 0.0 else 0.0
 	var z_ratio := absf(local_hit.z) / target_half_length if target_half_length > 0.0 else 0.0
+	var on_x_edge := x_ratio >= z_ratio
+
+	# A plane's local width (X) axis, after any yaw+tilt, always ends up
+	# purely horizontal -- (cos(yaw), 0, -sin(yaw)) in world space, tilt
+	# never moves it, only yaw does. Hinging off the Z-edge always works
+	# because that edge's own direction (the target's local X axis) is
+	# ALSO always horizontal, for any target tilt -- a width axis can
+	# always be yawed to line up with it. Hinging off the X-edge instead
+	# relies on the target's local Z axis, which is NOT tilt-invariant:
+	# horizontal while the target is flat (why the flat case below works
+	# the same way), but vertical once the target is already standing --
+	# and no horizontal width axis can ever align with a vertical line.
+	# So an already-standing target's X-edge can't become a "stand a new
+	# wall up" hinge at all; it's a corner instead (two vertical walls
+	# meeting at a shared vertical edge), which needs different geometry:
+	# the new panel stays standing (tilt unchanged) with its LENGTH
+	# running along the shared vertical edge and its WIDTH becoming the
+	# corner's outward-facing side, rather than the usual width-runs-
+	# along-the-hinge/length-becomes-the-rise pattern.
+	var corner_hinge := false
+	if standing and on_x_edge:
+		corner_hinge = absf(cos(target.rotation.x)) < 0.5
 
 	var local_offset := Vector3.ZERO
-	if x_ratio >= z_ratio:
+	if on_x_edge:
 		local_offset.x = signf(local_hit.x) * (target_half_width + (0.0 if standing else half_width))
+		if corner_hinge:
+			# The new panel's width is the corner's outward-facing side
+			# here (see above) -- offsetting by half of it along the
+			# target's local Y (its face-normal direction) centers the
+			# new panel flush against the shared vertical edge instead of
+			# overlapping the target's own face.
+			local_offset.y = hinge_sign * half_width
 	else:
 		local_offset.z = signf(local_hit.z) * (target_half_length + (0.0 if standing else half_length))
-	if standing:
+	if standing and not corner_hinge:
 		# Tilting ~90 degrees around local X turns the new Plane's own
 		# "length" dimension into its vertical extent (same fact the
 		# wall-mount case relies on) -- lifting the center by half of
@@ -282,16 +312,15 @@ func _compute_plane_edge_snap(target: PlaceableObject, hit_point: Vector3) -> vo
 		local_offset.y = half_length
 
 	_target_position = target.to_global(local_offset)
-	# A plane's local width axis, after any yaw+tilt, always ends up at
-	# exactly (cos(yaw), 0, -sin(yaw)) in world space -- tilt never moves it,
-	# only yaw does. So a hinge standing up from the target's X-edge needs
-	# its width axis rotated 90 degrees relative to the target's yaw to run
-	# along that edge instead of pointing straight across it; the Z-edge
-	# case is already aligned and needs no correction. Skipped when coplanar
-	# since a flat tile's own X vs Z edge doesn't change which way it faces.
-	var yaw_correction := (PI * 0.5) if (standing and x_ratio >= z_ratio) else 0.0
+	# Skipped when coplanar since a flat tile's own X vs Z edge doesn't
+	# change which way it faces. The corner case needs this same +90
+	# correction too -- verified separately (not just inherited): a
+	# standing new panel yawed 90 degrees from the target has its own
+	# face-normal exactly perpendicular to the target's, which is what a
+	# 90-degree corner actually requires.
+	var yaw_correction := (PI * 0.5) if (standing and on_x_edge) else 0.0
 	_target_yaw = target.rotation.y + yaw_correction + _rotation_offset
-	_target_tilt = target.rotation.x + (hinge_sign * PI * 0.5 if standing else 0.0)
+	_target_tilt = target.rotation.x + (hinge_sign * PI * 0.5 if (standing and not corner_hinge) else 0.0)
 
 
 func _process_targeted_object() -> void:
