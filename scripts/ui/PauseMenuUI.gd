@@ -543,11 +543,15 @@ const _MONTH_NAMES := [
 ]
 
 
-## Local time, not UTC -- a quick-load timestamp is meant to answer "when
-## did I make this" from the player's own perspective, not the server's
-## (there being no server at all is rather the point of this project).
+## UTC, not the player's local time -- Godot 4.3's
+## get_datetime_dict_from_unix_time() takes only the timestamp itself (no
+## utc/local toggle like get_datetime_dict_from_system() has), so there's
+## no reliable local-time conversion available here without hand-rolling
+## one against the system's own UTC offset. Good enough for "which of my
+## last few saves is this" at a glance; exact wall-clock precision isn't
+## the point.
 func _format_recent_save_label(timestamp: int) -> String:
-	var d := Time.get_datetime_dict_from_unix_time(timestamp, false)
+	var d := Time.get_datetime_dict_from_unix_time(timestamp)
 	var hour12: int = d["hour"] % 12
 	if hour12 == 0:
 		hour12 = 12
