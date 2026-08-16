@@ -13,10 +13,11 @@ class_name PauseMenuUI
 ## Laid out as a symmetrical cross: the central panel (New World, Save
 ## World, Load World, then Resume last) in the middle, a Skins card above
 ## it, an Objects & Tools card below it (two separate rows -- shapes, then
-## Delete/Rotate/Edit), a Colors card to its left, and an empty spacer to
-## its right (matching the Colors card's width) reserved for something
-## later. Every card shares one StyleBoxFlat (_card_style) and every
-## section heading shares one label style (_make_section_label()) so the
+## Empty Hands/Delete/Rotate/Edit), a Colors card to its left, and a Quick
+## Loads card to its right (same width as the Colors card, filling in
+## the space that used to be an empty reserved spacer). Every card shares
+## one StyleBoxFlat (_card_style) and every section heading shares one
+## label style (_make_section_label()) so the
 ## whole thing reads as one uniform layout instead of loose floating rows
 ## -- all built from code (no image/font assets), so this stays free in
 ## download size. None of it can live on the always-on BuildHUD: the mouse
@@ -43,6 +44,18 @@ class_name PauseMenuUI
 ##   FileDialog can't help here -- see WebFilePicker's docstring for why.
 ## - Desktop (including the editor): real, working native FileDialogs,
 ##   since desktop Godot has unrestricted filesystem access.
+##
+## Quick Loads (SaveLoadManager.record_recent_save()/list_recent_saves())
+## is a third way to get a world back besides Load World's file dialog:
+## every successful Save World click also drops a timestamped copy under
+## user://recent_saves, and this card lists the newest few with a
+## one-click load, capped and pruned by SaveLoadManager.MAX_RECENT_SAVES.
+## That directory is ordinary Godot save data, not a file the player
+## picked, so it works identically on both platforms and (crucially for
+## Web, where saving is otherwise just a one-way browser download)
+## survives a page reload via Godot's own IndexedDB-backed persistence
+## for user:// on HTML5 -- no custom JS bridge needed for this one, unlike
+## WebFilePicker.
 ##
 ## This entire node (and its FileDialog children) runs with
 ## PROCESS_MODE_ALWAYS so it keeps working while the tree is paused --
@@ -95,6 +108,8 @@ var _colors_row: HFlowContainer
 var _hex_input: LineEdit
 var _color_wheel: ColorWheel
 
+var _quick_loads_list: VBoxContainer
+
 ## Visible feedback for the whole import/export flow -- push_warning() alone
 ## isn't enough here, it's a debug-only channel that never shows up anywhere
 ## in a deployed Web build, so any failure would otherwise be completely
@@ -115,6 +130,7 @@ func set_build_controller(controller: BuildModeController) -> void:
 	_refresh_tools_row()
 	_refresh_skins_row()
 	_refresh_colors_row()
+	_refresh_quick_loads()
 
 
 func _ready() -> void:
@@ -230,13 +246,7 @@ func _ready() -> void:
 	outer_vbox.add_child(_make_section_card(objects_tools_section))
 	_build_objects_and_tools()
 
-	# Empty spacer, same width as the Colors card, so the cross layout
-	# stays visually balanced -- nothing lives here yet, reserved for a
-	# future right-side section.
-	var right_spacer := Control.new()
-	right_spacer.custom_minimum_size = Vector2(200, 0)
-	right_spacer.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	outer_hbox.add_child(right_spacer)
+	outer_hbox.add_child(_make_quick_loads_column())
 
 	_skin_dialog = _make_file_dialog(
 		FileDialog.FILE_MODE_OPEN_FILE,
@@ -340,6 +350,25 @@ func _make_colors_column() -> PanelContainer:
 
 	_colors_row = _make_circle_row()
 	column.add_child(_colors_row)
+
+	return _make_section_card(column)
+
+
+## The right-side card, filling in the space previously left empty. A
+## plain vertical list of ordinary Buttons rather than the circle rows
+## everything else uses -- each entry needs to show a real timestamp
+## label, which the fixed-diameter CircleButton has no room for (unlike
+## the single short word/thumbnail every other circle shows).
+func _make_quick_loads_column() -> PanelContainer:
+	var column := VBoxContainer.new()
+	column.custom_minimum_size = Vector2(200, 0)
+	column.add_theme_constant_override("separation", 8)
+
+	column.add_child(_make_section_label("Quick Loads"))
+
+	_quick_loads_list = VBoxContainer.new()
+	_quick_loads_list.add_theme_constant_override("separation", 4)
+	column.add_child(_quick_loads_list)
 
 	return _make_section_card(column)
 
@@ -473,6 +502,59 @@ func _on_color_used(_hex: String) -> void:
 	_refresh_colors_row()
 
 
+## Rebuilt from scratch on every open plus every save/quick-load -- same
+## tear-down-and-rebuild approach as the Skins/Colors rows, and just as
+## cheap here since it's capped at SaveLoadManager.MAX_RECENT_SAVES
+## entries and only runs on those infrequent events, never per-frame.
+func _refresh_quick_loads() -> void:
+	for child in _quick_loads_list.get_children():
+		child.queue_free()
+
+	var entries := SaveLoadManager.list_recent_saves()
+	if entries.is_empty():
+		var empty_label := Label.new()
+		empty_label.text = "No saves yet"
+		empty_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		empty_label.add_theme_color_override("font_color", Color(0.7, 0.7, 0.7))
+		_quick_loads_list.add_child(empty_label)
+		return
+
+	for entry in entries:
+		var button := Button.new()
+		button.text = _format_recent_save_label(entry["timestamp"])
+		button.focus_mode = Control.FOCUS_NONE
+		button.pressed.connect(_on_quick_load_pressed.bind(entry))
+		_quick_loads_list.add_child(button)
+
+
+func _on_quick_load_pressed(entry: Dictionary) -> void:
+	var label := _format_recent_save_label(entry["timestamp"])
+	if SaveLoadManager.load_from_path(entry["path"]):
+		_set_status("Loaded quick save from %s" % label)
+	else:
+		_set_status("Could not load quick save from %s" % label, true)
+	_refresh_quick_loads()
+	_refresh_skins_row()
+	_refresh_colors_row()
+
+
+const _MONTH_NAMES := [
+	"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+]
+
+
+## Local time, not UTC -- a quick-load timestamp is meant to answer "when
+## did I make this" from the player's own perspective, not the server's
+## (there being no server at all is rather the point of this project).
+func _format_recent_save_label(timestamp: int) -> String:
+	var d := Time.get_datetime_dict_from_unix_time(timestamp, false)
+	var hour12: int = d["hour"] % 12
+	if hour12 == 0:
+		hour12 = 12
+	var am_pm := "AM" if d["hour"] < 12 else "PM"
+	return "%s %d, %d:%02d %s" % [_MONTH_NAMES[d["month"] - 1], d["day"], hour12, d["minute"], am_pm]
+
+
 ## Live drag feedback -- updates the active color and the hex field's
 ## readout on every drag step, but doesn't touch SkinManager's used-colors
 ## history (that only happens once, on release; see _on_color_wheel_committed())
@@ -578,6 +660,7 @@ func _open() -> void:
 	_refresh_tools_row()
 	_refresh_skins_row()
 	_refresh_colors_row()
+	_refresh_quick_loads()
 
 
 ## force_recapture is false only for the Esc path (see
@@ -647,6 +730,7 @@ func _on_export_pressed() -> void:
 	if OS.has_feature("web"):
 		SaveLoadManager.save_to_browser_download("world.json")
 		_set_status("World download started")
+		_refresh_quick_loads()
 	else:
 		_export_dialog.popup_centered()
 
@@ -654,6 +738,7 @@ func _on_export_pressed() -> void:
 func _on_export_file_selected(path: String) -> void:
 	if SaveLoadManager.save_to_path(path):
 		_set_status("World saved to %s" % path.get_file())
+		_refresh_quick_loads()
 	else:
 		_set_status("Could not save world to %s" % path.get_file(), true)
 

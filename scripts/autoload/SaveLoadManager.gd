@@ -34,6 +34,18 @@ extends Node
 
 const SAVE_VERSION: int = 2
 
+## Every successful save (either write path below) also drops a timestamped
+## copy here, capped at MAX_RECENT_SAVES -- this is what backs the pause
+## menu's Quick Loads panel. Deliberately just `user://`, the same as any
+## other Godot save data, rather than a custom browser-storage bridge: the
+## Web export already persists `user://` via IndexedDB automatically (no
+## JS of our own needed, unlike WebFilePicker's actual file-open flow),
+## so this survives a page reload the same way a desktop save survives
+## closing the app -- important since a Web "save" is otherwise a one-way
+## browser download with nothing left to read back from.
+const RECENT_SAVES_DIR := "user://recent_saves"
+const MAX_RECENT_SAVES := 5
+
 
 func export_world_to_json() -> String:
 	var objects := []
@@ -50,12 +62,14 @@ func export_world_to_json() -> String:
 
 
 func save_to_path(path: String) -> bool:
+	var json := export_world_to_json()
 	var file := FileAccess.open(path, FileAccess.WRITE)
 	if file == null:
 		push_warning("SaveLoadManager: could not open '%s' for writing" % path)
 		return false
-	file.store_string(export_world_to_json())
+	file.store_string(json)
 	file.close()
+	record_recent_save(json)
 	return true
 
 
@@ -65,8 +79,9 @@ func save_to_browser_download(file_name: String = "world.json") -> void:
 	if not OS.has_feature("web"):
 		push_warning("save_to_browser_download called outside of a Web export")
 		return
-	var bytes := export_world_to_json().to_utf8_buffer()
-	JavaScriptBridge.download_buffer(bytes, file_name, "application/json")
+	var json := export_world_to_json()
+	JavaScriptBridge.download_buffer(json.to_utf8_buffer(), file_name, "application/json")
+	record_recent_save(json)
 
 
 func load_from_path(path: String) -> bool:
@@ -107,6 +122,52 @@ func clear_world() -> void:
 		child.queue_free()
 	GameManager.reset_id_counter()
 	GameManager.notify_world_cleared()
+
+
+## Filename is the timestamp itself (unix seconds) so listing/sorting
+## recent saves never needs a separate index file -- the directory listing
+## already carries all the ordering information required.
+func record_recent_save(json_text: String) -> void:
+	DirAccess.make_dir_recursive_absolute(RECENT_SAVES_DIR)
+	var timestamp := int(Time.get_unix_time_from_system())
+	var path := "%s/%d.json" % [RECENT_SAVES_DIR, timestamp]
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		push_warning("SaveLoadManager: could not write recent-save snapshot '%s'" % path)
+		return
+	file.store_string(json_text)
+	file.close()
+	_prune_recent_saves()
+
+
+func _prune_recent_saves() -> void:
+	var entries := _all_recent_saves()
+	for i in range(MAX_RECENT_SAVES, entries.size()):
+		DirAccess.remove_absolute(entries[i]["path"])
+
+
+## Newest first, capped at `limit` -- callers (the pause menu's Quick
+## Loads panel) just get {"timestamp": int, "path": String} entries ready
+## to display and load_from_path(), without needing to know the on-disk
+## naming scheme.
+func list_recent_saves(limit: int = MAX_RECENT_SAVES) -> Array:
+	var entries := _all_recent_saves()
+	if entries.size() > limit:
+		entries.resize(limit)
+	return entries
+
+
+func _all_recent_saves() -> Array:
+	var entries := []
+	var dir := DirAccess.open(RECENT_SAVES_DIR)
+	if dir == null:
+		return entries
+	for file_name in dir.get_files():
+		if not file_name.ends_with(".json"):
+			continue
+		entries.append({"timestamp": int(file_name.get_basename()), "path": "%s/%s" % [RECENT_SAVES_DIR, file_name]})
+	entries.sort_custom(func(a, b): return a["timestamp"] > b["timestamp"])
+	return entries
 
 
 func _spawn_object(object_data: Dictionary) -> void:

@@ -159,11 +159,18 @@ placement -- left-click again to let go of it).
 Press **Esc** to open the pause menu, laid out as a symmetrical cross: a
 compact central panel (**New World**, Save World, Load World, then Resume
 last) with a labeled **Skins** card above it, a labeled **Objects &
-Tools** card below it, a **Colors** card to its left, and space reserved
-to the right for something later. **New World** clears every placed
-object and every imported skin/color, resetting the build back to how it
-looked on first load — the same end state a browser refresh would reach,
-without the reload. Skins shows a thumbnail circle per loaded skin (click
+Tools** card below it, a **Colors** card to its left, and a **Quick
+Loads** card to its right. **New World** clears every placed object and
+every imported skin/color, resetting the build back to how it looked on
+first load — the same end state a browser refresh would reach, without
+the reload. **Quick Loads** lists your most recent Save World clicks
+(newest first, five max) with a one-click reload of each -- unlike Load
+World's file dialog, these persist on their own (in Godot's per-player
+save data, not a file you have to keep track of) so they're still there
+next time you open the game, even on the Web build where a "save" is
+otherwise just a one-way browser download.
+
+Skins shows a thumbnail circle per loaded skin (click
 one to make it active) plus a **+jpg/png** circle that imports a new one
 directly. Objects & Tools splits into two rows -- the five shapes, then
 Empty Hands/Delete/Rotate/Edit -- mirroring the **E** cycle (click any of
@@ -445,10 +452,9 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   Objects & Tools card below it (two separate rows — shapes, then Empty
   Hands/Delete/Rotate/Edit — sharing one slot-index space and
   `_tool_buttons` list under the hood, just visually split), a Colors
-  card to its left, and an empty spacer to its
-  right (matching the Colors card's width) reserved for later. Every card
-  shares one `StyleBoxFlat` (`_card_style`, built once and reused, not
-  rebuilt per card) and every heading shares one label style
+  card to its left, and a Quick Loads card (same width) to its right.
+  Every card shares one `StyleBoxFlat` (`_card_style`, built once and
+  reused, not rebuilt per card) and every heading shares one label style
   (`_make_section_label()`) — pure code, no image/font assets, so the
   visual polish costs nothing in download size. Nesting each row inside
   its card's `VBoxContainer` rather than a separately-anchored container
@@ -508,9 +514,29 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   `BuildModeController.reset_for_new_world()` (clears `active_skin_key`
   and the ghost's preview skin, since both might otherwise still point at
   a texture/color that just stopped existing, plus the accumulated
-  rotation/hinge nudges and current tool, via the same `select_slot(0)`
-  call `_ready()` already makes on startup) — same net effect as an actual
+  rotation/hinge nudges and current tool, via the same deferred
+  `select_slot()` call `_ready()` already makes on startup — see below,
+  it goes to Empty Hands now, not Box) — same net effect as an actual
   page refresh, without needing one.
+
+- **Quick Loads is built on the same `user://` Godot already gives every
+  export, not a bespoke browser-storage bridge.** Every successful Save
+  World click (`SaveLoadManager.save_to_path()` on desktop,
+  `save_to_browser_download()` on Web) also calls
+  `record_recent_save(json)`, writing a timestamped copy under
+  `user://recent_saves/<unix-time>.json` and pruning down to
+  `MAX_RECENT_SAVES` (5). The filename *is* the sort key, so
+  `list_recent_saves()` can just list the directory and sort — no
+  separate index file to keep in sync. This matters most on Web: a Web
+  "save" is otherwise a one-way browser download with nothing left in the
+  page to read back from, but Godot's HTML5 export already persists
+  `user://` via IndexedDB automatically, so a snapshot written there
+  survives a page reload the same way a desktop save survives closing the
+  app — reusing that existing mechanism instead of writing a
+  `localStorage`/`JavaScriptBridge` bridge of our own, matching how
+  `WebFilePicker` is the only place in the codebase that *does* need
+  custom JS, for a genuinely different reason (an actual native file
+  picker, which `user://` was never going to provide).
 
 - **The color wheel's ring+triangle is one shared piece of math, not two.**
   `ColorWheel.gd` draws its saturation/value triangle via `draw_polygon()`
