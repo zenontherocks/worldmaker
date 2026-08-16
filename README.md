@@ -45,7 +45,8 @@ worldmaker/
 │       ├── UIRoot.gd           # builds the UI pieces
 │       ├── PauseMenuUI.gd      # Esc pause menu: import/export, pauses the tree
 │       ├── BuildHUD.gd         # bottom-of-screen build status readout
-│       └── CircleButton.gd     # round clickable button (pause menu's Tools/Skins bands)
+│       ├── CircleButton.gd     # round clickable button (pause menu's Tools/Skins bands)
+│       └── ColorWheel.gd       # ring+triangle HSV picker (pause menu's Colors card)
 ```
 
 No script exceeds a single responsibility: movement, look, raycasting,
@@ -153,10 +154,12 @@ one to make it active) plus a **+jpg/png** circle that imports a new one
 directly. Objects & Tools splits into two rows -- the five shapes, then
 Delete/Rotate/Edit -- mirroring the **E** cycle (click any of the eight
 directly instead of cycling through them). Colors offers a second way to
-skin a placement: type a hex code (e.g. `ff8800`) and hit Enter to make
-that solid color active, with a circle appearing below the input for
-every color used so far to switch back to one later. A color fills the
-exact same slot a texture skin does, so picking one deselects the other.
+skin a placement: drag around the ring to pick a hue and inside the
+triangle to pick saturation/value, or type a hex code (e.g. `ff8800`) and
+hit Enter -- either way makes that solid color active immediately, with a
+circle appearing below for every color used so far to switch back to one
+later. A color fills the exact same slot a texture skin does, so picking
+one deselects the other.
 
 In the editor (and any desktop export) the pause menu always uses ordinary
 native file dialogs — real OS file pickers reading/writing the actual
@@ -420,6 +423,19 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   building their own material, which is also what makes picking a color
   automatically deselect a texture skin and vice versa: there's only one
   slot to hold either.
+
+- **The color wheel's ring+triangle is one shared piece of math, not two.**
+  `ColorWheel.gd` draws its saturation/value triangle via `draw_polygon()`
+  with three vertex colors (pure hue, white, black) — Godot's per-vertex
+  Gouraud interpolation across that triangle turns out to be, algebraically,
+  exactly the standard HSV-triangle parameterization (`value = ` the
+  barycentric weight *not* on the black corner, `saturation = ` the
+  pure-hue fraction of that non-black mix). So hit-testing a drag just runs
+  the same barycentric formula in reverse — there's no separate/approximate
+  inverse formula to keep in sync with what's drawn, and picking always
+  selects exactly the color rendered at that point. Entirely procedural
+  like every other custom control here, so it costs nothing in download
+  size.
 
 - **A Plane is double-sided.** `ShapeFactory.create_instance()` disables
   backface culling (`cull_mode = CULL_DISABLED`) on a placed Plane's

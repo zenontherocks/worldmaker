@@ -66,6 +66,7 @@ var _skins_row: HFlowContainer
 
 var _colors_row: HFlowContainer
 var _hex_input: LineEdit
+var _color_wheel: ColorWheel
 
 ## Visible feedback for the whole import/export flow -- push_warning() alone
 ## isn't enough here, it's a debug-only channel that never shows up anywhere
@@ -278,19 +279,26 @@ func _make_section_card(content: Control) -> PanelContainer:
 	return panel
 
 
-## The left-side card: a heading, a hex text input, and a wrapping row of
-## solid-color swatches for colors already used. Narrower than the panel
-## (custom_minimum_size below) so it reads as its own column rather than a
-## second full-width row -- still wide enough for a few swatches per line
-## before wrapping, same "give the row a real width" fix the Skins/
-## Objects/Tools rows rely on (this VBoxContainer stretches _colors_row to
-## its own width, same as outer_vbox does for those).
+## The left-side card: a heading, the ring+triangle ColorWheel, a hex text
+## input, and a wrapping row of solid-color swatches for colors already
+## used. Narrower than the panel (custom_minimum_size below) so it reads
+## as its own column rather than a second full-width row -- still wide
+## enough for a few swatches per line before wrapping, same "give the row
+## a real width" fix the Skins/Objects/Tools rows rely on (this
+## VBoxContainer stretches _colors_row to its own width, same as
+## outer_vbox does for those).
 func _make_colors_column() -> PanelContainer:
 	var column := VBoxContainer.new()
 	column.custom_minimum_size = Vector2(200, 0)
 	column.add_theme_constant_override("separation", 8)
 
 	column.add_child(_make_section_label("Colors"))
+
+	_color_wheel = ColorWheel.new()
+	_color_wheel.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_color_wheel.color_changed.connect(_on_color_wheel_changed)
+	_color_wheel.color_committed.connect(_on_color_wheel_committed)
+	column.add_child(_color_wheel)
 
 	_hex_input = LineEdit.new()
 	_hex_input.placeholder_text = "#hexcode"
@@ -395,17 +403,23 @@ func _on_skin_button_pressed(skin_key: String) -> void:
 ## Same rebuild-from-scratch approach as _refresh_skins_row(), and for the
 ## same reason: this only runs on open/select, never per-frame.
 ## SkinManager.used_colors() already reflects every color entered this
-## session or pulled in from a loaded world file.
+## session or pulled in from a loaded world file. Also syncs the
+## ColorWheel's marker positions to the currently active color, if it is
+## one, so reopening the menu shows where you left off.
 func _refresh_colors_row() -> void:
 	for child in _colors_row.get_children():
 		child.queue_free()
 	if _build_controller == null:
 		return
 
+	var active_key: String = _build_controller.active_skin_key
+	if SkinManager.is_color_key(active_key):
+		_color_wheel.set_color(Color.html(active_key))
+
 	for hex in SkinManager.used_colors():
 		var circle := CircleButton.new()
 		circle.swatch_color = Color.html(hex)
-		circle.selected = hex == _build_controller.active_skin_key
+		circle.selected = hex == active_key
 		circle.pressed.connect(_on_color_circle_pressed.bind(hex))
 		_colors_row.add_child(circle)
 
@@ -413,12 +427,32 @@ func _refresh_colors_row() -> void:
 func _on_color_circle_pressed(hex: String) -> void:
 	if _build_controller:
 		_build_controller.select_color(hex)
+	_color_wheel.set_color(Color.html(hex))
 	_refresh_colors_row()
 	_refresh_skins_row()
 
 
 func _on_color_used(_hex: String) -> void:
 	_refresh_colors_row()
+
+
+## Live drag feedback -- updates the active color and the hex field's
+## readout on every drag step, but doesn't touch SkinManager's used-colors
+## history (that only happens once, on release; see _on_color_wheel_committed())
+## so fine-tuning a drag doesn't flood the Colors row with near-duplicate
+## swatches.
+func _on_color_wheel_changed(new_color: Color) -> void:
+	var hex := "#" + new_color.to_html(false)
+	_hex_input.text = hex
+	if _build_controller:
+		_build_controller.select_color(hex)
+
+
+func _on_color_wheel_committed(new_color: Color) -> void:
+	var hex := "#" + new_color.to_html(false)
+	SkinManager.register_color(hex)
+	_refresh_colors_row()
+	_refresh_skins_row()
 
 
 ## Empty/whitespace input is a no-op (e.g. hitting Enter in an empty field)
@@ -439,6 +473,7 @@ func _on_hex_color_submitted(text: String) -> void:
 	SkinManager.register_color(hex)
 	if _build_controller:
 		_build_controller.select_color(hex)
+	_color_wheel.set_color(Color.html(hex))
 	_hex_input.text = ""
 	_refresh_colors_row()
 	_refresh_skins_row()
