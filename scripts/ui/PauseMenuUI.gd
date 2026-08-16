@@ -52,6 +52,20 @@ var _paused: bool = false
 var _content: PanelContainer
 var _build_controller: BuildModeController = null
 
+## _close() requests Pointer Lock; it doesn't guarantee it -- the browser
+## grants or denies that asynchronously, entirely outside Godot's control,
+## and (deliberately, as an anti-abuse measure) tends to reject a request
+## made in the first moment right after the tab/window regains focus. Without
+## this grace window, _process() below would immediately reinterpret that
+## rejection as "the browser kicked us out, re-pause" and snap the menu back
+## open before the request had any real chance to land -- which is what
+## made a Resume click look like it silently did nothing right after
+## switching back to the tab. Doesn't (can't) make the browser grant it any
+## faster; just stops the poll from preempting a request that might still
+## be about to succeed.
+const _RECAPTURE_GRACE_MS := 300
+var _last_close_time_ms: int = -_RECAPTURE_GRACE_MS
+
 ## Shared by every card (Skins/Objects & Tools/Colors/the central panel)
 ## so they read as one uniform layout -- built once in _ready(), not per
 ## card, since a StyleBoxFlat is just rendering parameters and Godot
@@ -518,10 +532,13 @@ func _on_backdrop_gui_input(event: InputEvent) -> void:
 ## needed to actually open the menu. Watching mouse_mode directly instead
 ## of only reacting to the action catches that release however it
 ## happened, so releasing the mouse and opening the menu become the same
-## single keypress from the player's perspective.
+## single keypress from the player's perspective. Gated by
+## _RECAPTURE_GRACE_MS (see its declaration) so this doesn't preempt a
+## Resume click's own still-pending (or just-rejected) recapture attempt.
 func _process(_delta: float) -> void:
 	if not _paused and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
-		_open()
+		if Time.get_ticks_msec() - _last_close_time_ms >= _RECAPTURE_GRACE_MS:
+			_open()
 
 
 func _open() -> void:
@@ -540,6 +557,7 @@ func _close() -> void:
 	visible = false
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	_last_close_time_ms = Time.get_ticks_msec()
 
 
 func _set_status(text: String, is_error: bool = false) -> void:

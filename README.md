@@ -350,6 +350,23 @@ limit, and is Cloudflare's own recommended fix for this exact situation.
   where the camera thinks it should still be spinning while a menu or file
   dialog is open.
 
+- **A "Resume" click can legitimately need a second try right after
+  switching back to the tab.** Setting `Input.mouse_mode = CAPTURED`
+  *requests* Pointer Lock; the browser grants or denies it asynchronously,
+  and deliberately throttles/denies re-acquisition for a brief cooldown
+  right after a tab/window regains focus (an anti-abuse measure, not a
+  bug). `PauseMenuUI._process()` polls `mouse_mode` every frame to catch
+  the browser force-exiting Pointer Lock on Escape (see below) — without
+  a grace window, that same poll would immediately reinterpret a Resume
+  click's still-pending or just-rejected grant as "the browser kicked us
+  out, re-pause," snapping the menu back open before the request had any
+  real chance to land, which is what made Resume look like it silently
+  did nothing. `_RECAPTURE_GRACE_MS` (300ms after `_close()`) gives a
+  grant a brief window to actually resolve before the poll gives up on
+  it — this reduces how often a second click is needed, but can't
+  eliminate the underlying browser cooldown entirely, since that's
+  enforced outside the page's control either way.
+
 - **Real `FileDialog` on desktop; a single universal fallback on Web,
   never Godot's own "native" Web dialog.** Desktop exports (and the
   editor) always use ordinary native `FileDialog`s reading/writing the
