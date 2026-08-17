@@ -32,16 +32,6 @@ static func build(chunk_coord: Vector2i, noise: TerrainNoise) -> StaticBody3D:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 
-	# A separate unindexed mesh for water, built alongside the terrain
-	# indices below rather than as one flat full-chunk quad -- a single
-	# quad per "wet" chunk would render as a hard-edged square regardless
-	# of the lake/river's actual shape. Reusing the same heights[] this
-	# loop already fills means every water quad's corners match the
-	# terrain's carved contour exactly, at no extra noise-sampling cost.
-	var water_st := SurfaceTool.new()
-	water_st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var has_water := false
-
 	for j in range(VERTS_PER_SIDE):
 		for i in range(VERTS_PER_SIDE):
 			var local_x := i * CELL_SIZE
@@ -66,33 +56,6 @@ static func build(chunk_coord: Vector2i, noise: TerrainNoise) -> StaticBody3D:
 			st.add_index(top_right)
 			st.add_index(bottom_left)
 			st.add_index(bottom_right)
-
-			# All four corners submerged, not just one -- ridged-noise river
-			# carving (see TerrainNoise._river_carve_at()) can flatten out
-			# near-zero over a patch rather than crossing cleanly, so an
-			# "any corner" threshold could include far more quads per
-			# chunk than intended in those spots. Requiring all four costs
-			# a slightly less generous shoreline (a strip of shallow-but-
-			# technically-dry ground at the water's edge) in exchange for
-			# a hard cap on worst-case water-mesh size per chunk.
-			if (
-				heights[top_left] < TerrainNoise.WATER_LEVEL
-				and heights[top_right] < TerrainNoise.WATER_LEVEL
-				and heights[bottom_left] < TerrainNoise.WATER_LEVEL
-				and heights[bottom_right] < TerrainNoise.WATER_LEVEL
-			):
-				has_water = true
-				var wx0 := i * CELL_SIZE
-				var wx1 := (i + 1) * CELL_SIZE
-				var wz0 := j * CELL_SIZE
-				var wz1 := (j + 1) * CELL_SIZE
-				water_st.set_normal(Vector3.UP)
-				water_st.add_vertex(Vector3(wx0, TerrainNoise.WATER_LEVEL, wz0))
-				water_st.add_vertex(Vector3(wx0, TerrainNoise.WATER_LEVEL, wz1))
-				water_st.add_vertex(Vector3(wx1, TerrainNoise.WATER_LEVEL, wz0))
-				water_st.add_vertex(Vector3(wx1, TerrainNoise.WATER_LEVEL, wz0))
-				water_st.add_vertex(Vector3(wx0, TerrainNoise.WATER_LEVEL, wz1))
-				water_st.add_vertex(Vector3(wx1, TerrainNoise.WATER_LEVEL, wz1))
 
 	var mesh := st.commit()
 
@@ -129,16 +92,30 @@ static func build(chunk_coord: Vector2i, noise: TerrainNoise) -> StaticBody3D:
 	)
 	body.add_child(collider)
 
-	if has_water:
-		var water_instance := MeshInstance3D.new()
-		water_instance.name = "Water"
-		water_instance.mesh = water_st.commit()
-		water_instance.material_override = _get_water_material()
-		# A flat translucent plane casting a shadow onto itself/nearby
-		# terrain looks wrong and isn't worth the extra pass -- unlike
-		# the terrain mesh above, water isn't meant to cast one at all.
-		water_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		body.add_child(water_instance)
+	# One flat plane per chunk at a fixed world height, always present --
+	# not contoured to match the carved terrain. A masked mesh that only
+	# covered actually-submerged quads (the previous approach) looked
+	# like disconnected stitched-together patches wherever a river was
+	# narrower than a full grid cell, since a cell only qualified when
+	# ALL its corners dipped underwater. A flat, always-present plane is
+	# both simpler and visually correct: it's normally hidden entirely
+	# under the opaque terrain above it, and shows through as a single
+	# continuous surface wherever terrain actually dips below WATER_LEVEL
+	# -- exactly the look of a real water table. Also considerably
+	# cheaper (4 vertices vs. up to hundreds), which incidentally helps
+	# the per-chunk cost problem a reported crash pointed at.
+	var water_instance := MeshInstance3D.new()
+	water_instance.name = "Water"
+	var water_mesh := PlaneMesh.new()
+	water_mesh.size = Vector2(CHUNK_SIZE, CHUNK_SIZE)
+	water_instance.mesh = water_mesh
+	water_instance.position = Vector3(CHUNK_SIZE / 2.0, TerrainNoise.WATER_LEVEL, CHUNK_SIZE / 2.0)
+	water_instance.material_override = _get_water_material()
+	# A flat translucent plane casting a shadow onto itself/nearby terrain
+	# looks wrong and isn't worth the extra pass -- unlike the terrain
+	# mesh above, water isn't meant to cast one at all.
+	water_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	body.add_child(water_instance)
 
 	for veg in VegetationFactory.scatter(chunk_coord, noise, CHUNK_SIZE):
 		body.add_child(veg)

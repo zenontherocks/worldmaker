@@ -182,19 +182,21 @@ edit-able through `BuildModeController` and serializable through
 every reload would make "deleting" one through the build tools
 confusing rather than useful.
 
-**Water** (lakes and rivers) shares one rendering mechanism for both.
-`TerrainChunk.build()`'s existing per-quad loop (already iterating every
-quad once to emit terrain triangle indices) also checks each quad's
-already-computed corner heights against `TerrainNoise.WATER_LEVEL` and,
-if any corner is submerged, emits a matching flat quad into a second
-mesh — so water follows the terrain's actual carved contour instead of
-rendering as one hard-edged square per "wet" chunk, at no extra
-noise-sampling cost. Lakes are just naturally low noise; rivers are
-`TerrainNoise`'s ridged-noise carving (`_river_carve_at()`, a third
-`FastNoiseLite` field, subtracted from raw height *before* the
-`flatten_factor` multiply so a river can never cut through the flat
-spawn zone) lowering terrain enough in a meandering path to dip below
-the same `WATER_LEVEL` — no separate river-specific rendering exists.
+**Water** (lakes and rivers) is one flat `PlaneMesh` per chunk at a fixed
+`TerrainNoise.WATER_LEVEL`, always present (not contoured to the carved
+terrain) — an earlier version tried to mask a mesh to only the
+actually-submerged quads, which looked like disconnected stitched-
+together patches wherever a river was narrower than a full grid cell.
+A flat plane is both simpler and correct: it's normally hidden entirely
+under the opaque terrain mesh above it, and shows through as one
+continuous surface wherever terrain actually dips below `WATER_LEVEL`.
+Lakes are just naturally low noise; rivers are `TerrainNoise`'s
+ridged-noise carving (`_river_carve_at()`, a third `FastNoiseLite`
+field, subtracted from raw height *before* the `flatten_factor` multiply
+so a river can never cut through the flat spawn zone) lowering terrain
+enough in a meandering path to dip below the same `WATER_LEVEL` — no
+separate river-specific rendering exists, the same flat plane picks it
+up automatically.
 
 **Worked example — "add a fourth biome":** add its base `Color` const
 (suffixed `_COLOR` — see that constant block's own comment for why) and
