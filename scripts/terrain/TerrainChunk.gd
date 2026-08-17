@@ -15,6 +15,9 @@ const VERTS_PER_SIDE := CHUNK_RESOLUTION + 1
 ## chunk ever needs.
 static var _material: StandardMaterial3D = null
 
+## Same lazy-static caching as _material above.
+static var _water_material: StandardMaterial3D = null
+
 
 static func build(chunk_coord: Vector2i, noise: TerrainNoise) -> StaticBody3D:
 	var origin_x := chunk_coord.x * CHUNK_SIZE
@@ -28,6 +31,16 @@ static func build(chunk_coord: Vector2i, noise: TerrainNoise) -> StaticBody3D:
 
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+
+	# A separate unindexed mesh for water, built alongside the terrain
+	# indices below rather than as one flat full-chunk quad -- a single
+	# quad per "wet" chunk would render as a hard-edged square regardless
+	# of the lake/river's actual shape. Reusing the same heights[] this
+	# loop already fills means every water quad's corners match the
+	# terrain's carved contour exactly, at no extra noise-sampling cost.
+	var water_st := SurfaceTool.new()
+	water_st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var has_water := false
 
 	for j in range(VERTS_PER_SIDE):
 		for i in range(VERTS_PER_SIDE):
@@ -53,6 +66,30 @@ static func build(chunk_coord: Vector2i, noise: TerrainNoise) -> StaticBody3D:
 			st.add_index(top_right)
 			st.add_index(bottom_left)
 			st.add_index(bottom_right)
+
+			# At least one submerged corner is enough to include this quad
+			# -- an occasional sliver of water rendered slightly past the
+			# true shoreline is a minor, acceptable simplification at this
+			# grid resolution (2m cells), not worth a more precise partial
+			# cut here.
+			if (
+				heights[top_left] < TerrainNoise.WATER_LEVEL
+				or heights[top_right] < TerrainNoise.WATER_LEVEL
+				or heights[bottom_left] < TerrainNoise.WATER_LEVEL
+				or heights[bottom_right] < TerrainNoise.WATER_LEVEL
+			):
+				has_water = true
+				var wx0 := i * CELL_SIZE
+				var wx1 := (i + 1) * CELL_SIZE
+				var wz0 := j * CELL_SIZE
+				var wz1 := (j + 1) * CELL_SIZE
+				water_st.set_normal(Vector3.UP)
+				water_st.add_vertex(Vector3(wx0, TerrainNoise.WATER_LEVEL, wz0))
+				water_st.add_vertex(Vector3(wx0, TerrainNoise.WATER_LEVEL, wz1))
+				water_st.add_vertex(Vector3(wx1, TerrainNoise.WATER_LEVEL, wz0))
+				water_st.add_vertex(Vector3(wx1, TerrainNoise.WATER_LEVEL, wz0))
+				water_st.add_vertex(Vector3(wx0, TerrainNoise.WATER_LEVEL, wz1))
+				water_st.add_vertex(Vector3(wx1, TerrainNoise.WATER_LEVEL, wz1))
 
 	var mesh := st.commit()
 
@@ -89,6 +126,17 @@ static func build(chunk_coord: Vector2i, noise: TerrainNoise) -> StaticBody3D:
 	)
 	body.add_child(collider)
 
+	if has_water:
+		var water_instance := MeshInstance3D.new()
+		water_instance.name = "Water"
+		water_instance.mesh = water_st.commit()
+		water_instance.material_override = _get_water_material()
+		# A flat translucent plane casting a shadow onto itself/nearby
+		# terrain looks wrong and isn't worth the extra pass -- unlike
+		# the terrain mesh above, water isn't meant to cast one at all.
+		water_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		body.add_child(water_instance)
+
 	for veg in VegetationFactory.scatter(chunk_coord, noise, CHUNK_SIZE):
 		body.add_child(veg)
 
@@ -102,3 +150,16 @@ static func _get_material() -> StandardMaterial3D:
 		_material.roughness = 1.0
 		_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return _material
+
+
+static func _get_water_material() -> StandardMaterial3D:
+	if _water_material == null:
+		_water_material = StandardMaterial3D.new()
+		_water_material.albedo_color = Color(0.15, 0.35, 0.55, 0.55)
+		_water_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		# Needed, not optional: with no swim mechanic, the player can walk
+		# into water and the camera ends up under the plane -- without
+		# this, the exact backface-culling bug just fixed for terrain
+		# would reappear here, on a flat plane instead of a heightfield.
+		_water_material.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return _water_material
