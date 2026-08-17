@@ -63,6 +63,13 @@ static func build(chunk_coord: Vector2i, noise: TerrainNoise) -> StaticBody3D:
 	mesh_instance.name = "Mesh"
 	mesh_instance.mesh = mesh
 	mesh_instance.material_override = _get_material()
+	# Mirrors ShapeFactory.gd's Plane handling: whichever way this mesh's
+	# triangle winding actually ends up (verified by hand, but there's no
+	# Godot binary here to confirm against), a single-layer heightfield
+	# should never have an invisible top or a visible underside either
+	# way. Shadow casting has its own independent culling pass, so it
+	# needs the same double-sided treatment separately from cull_mode.
+	mesh_instance.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_DOUBLE_SIDED
 	body.add_child(mesh_instance)
 
 	var shape := HeightMapShape3D.new()
@@ -90,4 +97,5 @@ static func _get_material() -> StandardMaterial3D:
 		_material = StandardMaterial3D.new()
 		_material.vertex_color_use_as_albedo = true
 		_material.roughness = 1.0
+		_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return _material
