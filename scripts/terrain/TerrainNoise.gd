@@ -21,6 +21,20 @@ const BIOME_NOISE_FREQUENCY := 0.004
 ## and river beds.
 const WATER_LEVEL := -2.0
 
+## "Ridged noise" river carving: a point's distance from a meandering
+## centerline is approximated by abs(river noise) (zero exactly on the
+## centerline, rising on both sides). RIVER_WIDTH_NOISE is a threshold on
+## that noise MAGNITUDE, not actual world-space distance -- real river
+## width will vary along its length depending on how steep the noise
+## field's local gradient is there (narrower where steep, wider where
+## shallow). This is a noise trick, not simulated hydrology. Frequency
+## sits between BIOME_NOISE_FREQUENCY and HEIGHT_NOISE_FREQUENCY: rivers
+## should meander across biomes over a shorter distance than a whole
+## biome region.
+const RIVER_NOISE_FREQUENCY := 0.008
+const RIVER_WIDTH_NOISE := 0.04
+const RIVER_DEPTH := 9.0
+
 ## Player spawns at (0, 1, 0) (see Main.tscn's Player transform) and any
 ## hand-authored world JSON (e.g. a saved house build) assumes flat ground
 ## at y=0 near the origin -- so terrain is forced flat within this radius
@@ -38,6 +52,7 @@ const NORMAL_SAMPLE_EPSILON := 0.5
 
 var _height_noise := FastNoiseLite.new()
 var _biome_noise := FastNoiseLite.new()
+var _river_noise := FastNoiseLite.new()
 
 
 func _init() -> void:
@@ -50,10 +65,36 @@ func _init() -> void:
 	_biome_noise.seed = NOISE_SEED + 1
 	_biome_noise.frequency = BIOME_NOISE_FREQUENCY
 
+	# Different seed again so river paths don't trace biome boundaries.
+	_river_noise.seed = NOISE_SEED + 2
+	_river_noise.frequency = RIVER_NOISE_FREQUENCY
+
 
 func height_at(world_x: float, world_z: float) -> float:
 	var raw := _height_noise.get_noise_2d(world_x, world_z) * HEIGHT_AMPLITUDE
-	return raw * flatten_factor(world_x, world_z)
+	var carve := _river_carve_at(world_x, world_z)
+	# Carve happens *inside* the flatten multiply, not after it -- that's
+	# what keeps a river from cutting through the flat spawn/tan-house
+	# zone even if its centerline would otherwise pass through the
+	# origin. flatten_factor() is exactly 0 within FLATTEN_INNER_RADIUS,
+	# so the same multiply that already zeroes hill noise there zeroes
+	# the carve too. (raw * flatten_factor(...) - carve) would NOT have
+	# this property.
+	return (raw - carve) * flatten_factor(world_x, world_z)
+
+
+## Depth to subtract from the raw height at this point for river carving.
+## 0 far from a river centerline, rising smoothly to RIVER_DEPTH within
+## RIVER_WIDTH_NOISE of it. A river crossing a hilltop can still carve
+## deep enough to be a dry ravine rather than filled water (RIVER_DEPTH
+## doesn't always reach down to WATER_LEVEL from a hill peak) -- only
+## lower-elevation stretches of the same river actually show water via
+## TerrainChunk's water mesh. Reads as "rivers pool in valleys," not as
+## a bug, but means no continuous unbroken blue ribbon everywhere.
+func _river_carve_at(world_x: float, world_z: float) -> float:
+	var distance_from_centerline := absf(_river_noise.get_noise_2d(world_x, world_z))
+	var carve_t := 1.0 - smoothstep(0.0, RIVER_WIDTH_NOISE, distance_from_centerline)
+	return carve_t * RIVER_DEPTH
 
 
 func normal_at(world_x: float, world_z: float) -> Vector3:
