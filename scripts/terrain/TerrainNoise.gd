@@ -15,6 +15,12 @@ const HEIGHT_NOISE_OCTAVES := 4
 const HEIGHT_AMPLITUDE := 8.0
 const BIOME_NOISE_FREQUENCY := 0.004
 
+## Below this height, TerrainChunk renders a water surface (see its
+## water-quad mesh) instead of leaving the carved-out terrain dry.
+## VegetationFactory also reads this to keep trees/flowers out of lake
+## and river beds.
+const WATER_LEVEL := -2.0
+
 ## Player spawns at (0, 1, 0) (see Main.tscn's Player transform) and any
 ## hand-authored world JSON (e.g. a saved house build) assumes flat ground
 ## at y=0 near the origin -- so terrain is forced flat within this radius
@@ -47,7 +53,7 @@ func _init() -> void:
 
 func height_at(world_x: float, world_z: float) -> float:
 	var raw := _height_noise.get_noise_2d(world_x, world_z) * HEIGHT_AMPLITUDE
-	return raw * _flatten_factor(world_x, world_z)
+	return raw * flatten_factor(world_x, world_z)
 
 
 func normal_at(world_x: float, world_z: float) -> Vector3:
@@ -60,12 +66,17 @@ func normal_at(world_x: float, world_z: float) -> Vector3:
 
 
 func color_at(world_x: float, world_z: float, height: float) -> Color:
-	var biome_value := _biome_noise.get_noise_2d(world_x, world_z)
-	var biome_color := BiomeDefinitions.color_for(biome_value, height)
-	var t := _flatten_factor(world_x, world_z)
-	return BiomeDefinitions.GRASSLAND.lerp(biome_color, t)
+	var biome_color := BiomeDefinitions.color_for(biome_noise_at(world_x, world_z), height)
+	var t := flatten_factor(world_x, world_z)
+	return BiomeDefinitions.GRASSLAND_COLOR.lerp(biome_color, t)
 
 
-func _flatten_factor(world_x: float, world_z: float) -> float:
+func biome_noise_at(world_x: float, world_z: float) -> float:
+	return _biome_noise.get_noise_2d(world_x, world_z)
+
+
+## Public (no longer file-private) -- VegetationFactory also reads this
+## to keep decorations out of the spawn/tan-house flatten zone.
+func flatten_factor(world_x: float, world_z: float) -> float:
 	var dist := Vector2(world_x, world_z).length()
 	return smoothstep(FLATTEN_INNER_RADIUS, FLATTEN_OUTER_RADIUS, dist)

@@ -6,10 +6,14 @@ class_name BiomeDefinitions
 ## so biomes are plain colors blended per-vertex rather than splatted
 ## textures -- TerrainChunk paints every terrain vertex with color_for().
 
-const DESERT := Color(0.82, 0.7, 0.45)
-const GRASSLAND := Color(0.35, 0.55, 0.35)  # matches the old flat Ground's albedo
-const HIGHLANDS := Color(0.45, 0.42, 0.3)
-const ROCK := Color(0.5, 0.5, 0.5)
+## Suffixed _COLOR (not just DESERT etc.) because the Biome enum below
+## needs those exact bare names for its own members -- a named GDScript
+## enum's members are injected as class-level constants too, not just as
+## Biome.DESERT, so unsuffixed names here would collide with it.
+const DESERT_COLOR := Color(0.82, 0.7, 0.45)
+const GRASSLAND_COLOR := Color(0.35, 0.55, 0.35)  # matches the old flat Ground's albedo
+const HIGHLANDS_COLOR := Color(0.45, 0.42, 0.3)
+const ROCK_COLOR := Color(0.5, 0.5, 0.5)
 
 ## Biome noise sample is expected roughly in [-1, 1]. Blend width around
 ## each threshold keeps biome borders a smooth gradient instead of a hard
@@ -26,11 +30,28 @@ const BIOME_BLEND_WIDTH := 0.1
 const ROCK_START_HEIGHT := 4.0
 const ROCK_FULL_HEIGHT := 7.0
 
+## Discrete counterpart to color_for()'s continuous blending, used by
+## VegetationFactory to pick a single tree archetype for a given point
+## rather than blend between several. ROCK_START_HEIGHT (not the later
+## ROCK_FULL_HEIGHT) is the cutoff -- that's the first height any rock
+## tint appears at all, so it's the conservative "no vegetation" line.
+enum Biome { DESERT, GRASSLAND, HIGHLANDS, ROCK }
+
 
 static func color_for(biome_noise: float, height: float) -> Color:
 	var base := _base_biome_color(biome_noise)
 	var rock_t := smoothstep(ROCK_START_HEIGHT, ROCK_FULL_HEIGHT, height)
-	return base.lerp(ROCK, rock_t)
+	return base.lerp(ROCK_COLOR, rock_t)
+
+
+static func dominant_biome(biome_noise: float, height: float) -> Biome:
+	if height >= ROCK_START_HEIGHT:
+		return Biome.ROCK
+	if biome_noise < BIOME_THRESHOLD_LOW:
+		return Biome.DESERT
+	elif biome_noise > BIOME_THRESHOLD_HIGH:
+		return Biome.HIGHLANDS
+	return Biome.GRASSLAND
 
 
 static func _base_biome_color(biome_noise: float) -> Color:
@@ -40,4 +61,4 @@ static func _base_biome_color(biome_noise: float) -> Color:
 	var high_t := smoothstep(
 		BIOME_THRESHOLD_HIGH - BIOME_BLEND_WIDTH, BIOME_THRESHOLD_HIGH + BIOME_BLEND_WIDTH, biome_noise
 	)
-	return DESERT.lerp(GRASSLAND, low_t).lerp(HIGHLANDS, high_t)
+	return DESERT_COLOR.lerp(GRASSLAND_COLOR, low_t).lerp(HIGHLANDS_COLOR, high_t)
