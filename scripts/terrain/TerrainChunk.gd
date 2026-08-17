@@ -89,6 +89,9 @@ static func build(chunk_coord: Vector2i, noise: TerrainNoise) -> StaticBody3D:
 	)
 	body.add_child(collider)
 
+	for veg in VegetationFactory.scatter(chunk_coord, noise, CHUNK_SIZE):
+		body.add_child(veg)
+
 	return body
 
 
