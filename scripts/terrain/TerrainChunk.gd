@@ -67,16 +67,19 @@ static func build(chunk_coord: Vector2i, noise: TerrainNoise) -> StaticBody3D:
 			st.add_index(bottom_left)
 			st.add_index(bottom_right)
 
-			# At least one submerged corner is enough to include this quad
-			# -- an occasional sliver of water rendered slightly past the
-			# true shoreline is a minor, acceptable simplification at this
-			# grid resolution (2m cells), not worth a more precise partial
-			# cut here.
+			# All four corners submerged, not just one -- ridged-noise river
+			# carving (see TerrainNoise._river_carve_at()) can flatten out
+			# near-zero over a patch rather than crossing cleanly, so an
+			# "any corner" threshold could include far more quads per
+			# chunk than intended in those spots. Requiring all four costs
+			# a slightly less generous shoreline (a strip of shallow-but-
+			# technically-dry ground at the water's edge) in exchange for
+			# a hard cap on worst-case water-mesh size per chunk.
 			if (
 				heights[top_left] < TerrainNoise.WATER_LEVEL
-				or heights[top_right] < TerrainNoise.WATER_LEVEL
-				or heights[bottom_left] < TerrainNoise.WATER_LEVEL
-				or heights[bottom_right] < TerrainNoise.WATER_LEVEL
+				and heights[top_right] < TerrainNoise.WATER_LEVEL
+				and heights[bottom_left] < TerrainNoise.WATER_LEVEL
+				and heights[bottom_right] < TerrainNoise.WATER_LEVEL
 			):
 				has_water = true
 				var wx0 := i * CELL_SIZE

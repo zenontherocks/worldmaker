@@ -18,13 +18,16 @@ class_name VegetationFactory
 const TreeArchetype = VegetationDefinitions.TreeArchetype
 const Biome = BiomeDefinitions.Biome
 
-## Deliberately conservative -- no way to profile actual WASM/browser
-## performance from here. If this needs tuning after real in-browser
-## testing, lower these first (cheapest); TerrainStreamer.
-## VIEW_DISTANCE_CHUNKS is the next lever but squares the effect, since
+## Cut hard from the original 5/12 after real in-browser testing showed
+## each newly-streamed chunk doing enough synchronous node/mesh-building
+## work (this plus TerrainChunk's water mesh) to be a likely cause of a
+## dropped WebGL context on movement -- StaticBody3D/CollisionShape3D/
+## MeshInstance3D/Mesh construction per attempt adds up fast at 81
+## resident chunks. If still not enough, TerrainStreamer.
+## VIEW_DISTANCE_CHUNKS is the next lever, but squares the effect since
 ## it multiplies every chunk's decorations, not just its own count.
-const TREE_ATTEMPTS_PER_CHUNK := 5
-const FLOWER_ATTEMPTS_PER_CHUNK := 12
+const TREE_ATTEMPTS_PER_CHUNK := 2
+const FLOWER_ATTEMPTS_PER_CHUNK := 4
 
 ## Keeps decorations well clear of the spawn/tan-house build area --
 ## higher than a bare ">0" check so trees don't start appearing right at
