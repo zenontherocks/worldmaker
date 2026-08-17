@@ -19,7 +19,7 @@ specifically (this file stays focused on setup/controls/deploy).
 worldmaker/
 ├── project.godot
 ├── scenes/
-│   ├── Main.tscn              # level: ground, sky, light, World container, Player, UI
+│   ├── Main.tscn              # level: terrain, sky, light, World container, Player, UI
 │   └── Player.tscn            # CharacterBody3D rig: camera, raycast, build controller, ghost
 ├── web/
 │   └── local-data-bridge.js    # universal <input type=file> shim for the exported page
@@ -41,6 +41,11 @@ worldmaker/
 │   │   ├── PlaceableObject.gd  # metadata + to_dict() for placed objects
 │   │   ├── GhostPreview.gd     # translucent placement preview
 │   │   └── BuildModeController.gd # raycast, cycling, dimension edit, placement
+│   ├── terrain/
+│   │   ├── BiomeDefinitions.gd # data table: biome colors + noise thresholds
+│   │   ├── TerrainNoise.gd     # world (x,z) -> height/normal/color
+│   │   ├── TerrainChunk.gd     # builds one chunk's mesh + collision
+│   │   └── TerrainStreamer.gd  # loads/frees chunks around the player
 │   └── ui/
 │       ├── UIRoot.gd           # builds the UI pieces
 │       ├── PauseMenuUI.gd      # Esc pause menu: import/export, pauses the tree
@@ -92,7 +97,9 @@ small autoload services.
 ## 3. Running locally
 
 Press **F5** (or the Play button) in the editor. You should spawn standing
-on a green ground plane. There's no separate "enter Build Mode" step —
+on flat green ground, with infinite procedurally-generated rolling hills
+and biomes streaming in as you walk outward (see `TerrainStreamer.gd` in
+`CLAUDE.md` for how). There's no separate "enter Build Mode" step —
 building is the whole game, so you're always in it. Walk with WASD, look
 with the mouse, **E** to pick a tool, scroll to resize, **R**/**Shift+R** to
 rotate, left-click to place. New placements face the same direction you're

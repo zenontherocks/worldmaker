@@ -9,10 +9,22 @@ const SPEED: float = 5.0
 const JUMP_VELOCITY: float = 4.5
 const ACCELERATION: float = 10.0
 
+## Terrain streams in around the player rather than being one fixed
+## always-present mesh (see TerrainStreamer), so unlike the old flat
+## Ground plane this can't be tested locally end-to-end -- this is cheap
+## insurance against any streaming edge case (a load-time race, a future
+## bug in the chunk queue) dropping the player into empty space.
+const FALL_RESET_Y: float = -50.0
+const SPAWN_POSITION: Vector3 = Vector3(0, 1, 0)
+
 var _gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity", 9.8)
 
 
 func _physics_process(delta: float) -> void:
+	if global_position.y < FALL_RESET_Y:
+		global_position = SPAWN_POSITION
+		velocity = Vector3.ZERO
+
 	if not is_on_floor():
 		velocity.y -= _gravity * delta
 

@@ -40,6 +40,11 @@ scripts/
 │   ├── PlaceableObject.gd     # metadata + to_dict() on every placed object
 │   ├── GhostPreview.gd        # translucent placement preview, visual-only
 │   └── BuildModeController.gd # raycast, tool cycling, dimension edit, placement, ALL snapping logic
+├── terrain/
+│   ├── BiomeDefinitions.gd # data table: biome colors + noise thresholds (add a biome here)
+│   ├── TerrainNoise.gd     # single source of truth: world (x,z) -> height/normal/color
+│   ├── TerrainChunk.gd     # (chunk_coord, TerrainNoise) -> Mesh + HeightMapShape3D for one chunk
+│   └── TerrainStreamer.gd  # loads/frees chunks around the player, see "Infinite terrain" below
 └── ui/
     ├── UIRoot.gd          # builds PauseMenuUI + BuildHUD + Crosshair, no logic
     ├── PauseMenuUI.gd     # Esc menu -- see "Procedural UI pattern" below
@@ -48,7 +53,7 @@ scripts/
     └── Crosshair.gd       # decorative center dot, no logic
 
 scenes/
-├── Main.tscn   # Environment, SunLight, Ground, World (empty container GameManager fills), Player, UI
+├── Main.tscn   # Environment, SunLight, Terrain, World (empty container GameManager fills), Player, UI
 └── Player.tscn # CharacterBody3D > Camera3D > RayCast3D + BuildController > GhostPreview
 
 project.godot          # autoload order above; run/main_scene=Main.tscn; renderer=gl_compatibility
@@ -115,6 +120,49 @@ path (`BuildModeController._place_current()`) and world-load
 (`SaveLoadManager._spawn_object()`) call through it. If you're adding a
 third kind of "skin" (e.g. a procedural pattern), extend `build_material()`
 and `is_color_key()`-style discrimination there, not in either caller.
+
+### Infinite terrain (`TerrainStreamer.gd`, `TerrainNoise.gd`, `TerrainChunk.gd`)
+
+Replaced the old fixed 60x60 `Ground` plane, which had a hard edge you'd
+fall through forever past. `TerrainNoise.gd` is the **single source of
+truth** for "what does the terrain look like at this world (x, z)" —
+`height_at()`/`normal_at()`/`color_at()` are pure functions of world
+coordinates only, never chunk-local ones. That's *why* adjacent chunks
+never show seams or lighting cracks: two chunks sharing an edge call the
+same functions with the same world-space inputs and get bit-identical
+results, by construction, not by careful chunk-boundary bookkeeping.
+`TerrainChunk.build()` (mirrors `ShapeFactory.create_instance()`) reads
+those three functions once per vertex to build both the visual mesh and
+the `HeightMapShape3D` collision from the *same* height samples, so the
+walkable surface can't drift from the rendered one either.
+
+`TerrainStreamer.gd` (a `Node3D` under `Main`, wired via
+`set_player()` from `Main.gd`'s `_ready()` — see "Composition root"
+below) tracks the player's current chunk coordinate and keeps a
+square ring of chunks loaded within `VIEW_DISTANCE_CHUNKS`, freeing ones
+that fall outside `VIEW_DISTANCE_CHUNKS + UNLOAD_HYSTERESIS_CHUNKS` (the
+hysteresis margin stops load/unload thrashing right at the boundary).
+New chunks are generated a few at a time (`CHUNKS_GENERATED_PER_FRAME`)
+from a nearest-first queue rather than all at once, to avoid a hitch
+when crossing a chunk boundary; `_ready()` eagerly builds a small block
+around world origin synchronously first, since physics can tick before
+the first budgeted frame runs otherwise.
+
+Terrain is intentionally **not** part of the save/load system —
+`SaveLoadManager` only serializes `GameManager.world_root`'s children,
+and terrain chunks live outside it (sibling to `World`, where `Ground`
+used to sit), regenerated on demand from a fixed noise seed rather than
+persisted. A world JSON like a saved house build still works unmodified,
+because `TerrainNoise` hard-flattens height/color to a flat green plain
+within `FLATTEN_INNER_RADIUS` of world origin (blending into full hills
+by `FLATTEN_OUTER_RADIUS`) — the same assumption the player's spawn
+point and any origin-anchored build already relied on.
+
+**Worked example — "add a fourth biome":** add its base `Color` const
+and extend `_base_biome_color()`'s threshold chain in
+`BiomeDefinitions.gd` — that file is the only place biome colors and
+their noise thresholds live, exactly like `ShapeDefinitions.DEFS` is the
+only place shape dimensions live.
 
 ### Procedural UI pattern (`PauseMenuUI.gd`, `CircleButton.gd`)
 

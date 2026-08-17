@@ -10,10 +10,12 @@ extends Node3D
 @onready var _world: Node3D = $World
 @onready var _player: PlayerController = $Player
 @onready var _ui: UIRoot = $UI
+@onready var _terrain: TerrainStreamer = $Terrain
 
 
 func _ready() -> void:
 	GameManager.register_world(_world)
+	_terrain.set_player(_player)
 
 	var build_controller := _player.get_node("Camera3D/BuildController") as BuildModeController
 	build_controller.shape_changed.connect(_ui.build_hud.on_shape_changed)

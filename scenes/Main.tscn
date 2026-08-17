@@ -1,8 +1,9 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="Script" path="res://scripts/core/Main.gd" id="1_main"]
 [ext_resource type="PackedScene" path="res://scenes/Player.tscn" id="2_player"]
 [ext_resource type="Script" path="res://scripts/ui/UIRoot.gd" id="3_ui"]
+[ext_resource type="Script" path="res://scripts/terrain/TerrainStreamer.gd" id="4_terrain"]
 
 [sub_resource type="ProceduralSkyMaterial" id="ProceduralSkyMaterial_sky"]
 sky_top_color = Color(0.38, 0.58, 0.92, 1)
@@ -17,16 +18,6 @@ sky_material = SubResource("ProceduralSkyMaterial_sky")
 background_mode = 2
 sky = SubResource("Sky_main")
 
-[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_ground"]
-albedo_color = Color(0.35, 0.55, 0.35, 1)
-
-[sub_resource type="PlaneMesh" id="PlaneMesh_ground"]
-material = SubResource("StandardMaterial3D_ground")
-size = Vector2(60, 60)
-
-[sub_resource type="BoxShape3D" id="BoxShape3D_ground"]
-size = Vector3(60, 0.1, 60)
-
 [node name="Main" type="Node3D"]
 script = ExtResource("1_main")
 
@@ -38,14 +29,8 @@ position = Vector3(0, 6, 0)
 rotation_degrees = Vector3(-45, -35, 0)
 shadow_enabled = true
 
-[node name="Ground" type="StaticBody3D" parent="."]
-
-[node name="GroundMesh" type="MeshInstance3D" parent="Ground"]
-mesh = SubResource("PlaneMesh_ground")
-
-[node name="GroundCollision" type="CollisionShape3D" parent="Ground"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -0.05, 0)
-shape = SubResource("BoxShape3D_ground")
+[node name="Terrain" type="Node3D" parent="."]
+script = ExtResource("4_terrain")
 
 [node name="World" type="Node3D" parent="."]
 
