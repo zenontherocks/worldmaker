@@ -9,6 +9,15 @@ const SPEED: float = 5.0
 const JUMP_VELOCITY: float = 4.5
 const ACCELERATION: float = 10.0
 
+## Sustained rise rate while holding jump underwater, applied every frame
+## rather than a single decaying impulse like JUMP_VELOCITY -- there's no
+## fuller buoyancy/drag simulation here, just "hold Space to reach the
+## surface." Water is a flat plane at the same TerrainNoise.WATER_LEVEL
+## everywhere (see TerrainChunk's water mesh), so "am I in water" is a
+## single global Y comparison, not something that needs querying terrain
+## shape at all.
+const SWIM_SPEED: float = 2.5
+
 ## Terrain streams in around the player rather than being one fixed
 ## always-present mesh (see TerrainStreamer), so unlike the old flat
 ## Ground plane this can't be tested locally end-to-end -- this is cheap
@@ -25,17 +34,25 @@ func _physics_process(delta: float) -> void:
 		global_position = SPAWN_POSITION
 		velocity = Vector3.ZERO
 
-	if not is_on_floor():
-		velocity.y -= _gravity * delta
-
 	# jump/movement read raw Input state every frame rather than routed
 	# events, so unlike _unhandled_input they're never blocked just because
 	# a UI Control (e.g. a settings-panel button, the skin picker list) has
 	# focus -- Space would both jump AND re-press a focused button
 	# otherwise. Gate on mouse capture, the project's existing signal for
 	# "player is actively playing" vs. "player is using a menu."
+	var swimming := (
+		global_position.y < TerrainNoise.WATER_LEVEL
+		and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+		and Input.is_action_pressed("jump")
+	)
+
+	if swimming:
+		velocity.y = SWIM_SPEED
+	elif not is_on_floor():
+		velocity.y -= _gravity * delta
+
 	if Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		if Input.is_action_just_pressed("jump") and is_on_floor():
+		if not swimming and Input.is_action_just_pressed("jump") and is_on_floor():
 			velocity.y = JUMP_VELOCITY
 
 		var input_dir := Input.get_vector("move_left", "move_right", "move_forward", "move_back")

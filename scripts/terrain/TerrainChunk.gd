@@ -137,9 +137,10 @@ static func _get_water_material() -> StandardMaterial3D:
 		_water_material = StandardMaterial3D.new()
 		_water_material.albedo_color = Color(0.15, 0.35, 0.55, 0.55)
 		_water_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		# Needed, not optional: with no swim mechanic, the player can walk
-		# into water and the camera ends up under the plane -- without
-		# this, the exact backface-culling bug just fixed for terrain
-		# would reappear here, on a flat plane instead of a heightfield.
+		# Needed, not optional: the player can walk or sink into water
+		# (swimming up via PlayerController.gd is the only way out) with
+		# the camera ending up under the plane -- without this, the exact
+		# backface-culling bug just fixed for terrain would reappear here,
+		# on a flat plane instead of a heightfield.
 		_water_material.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return _water_material
