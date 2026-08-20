@@ -31,6 +31,10 @@ const PINE_CANOPY_RADIUS := Vector2(1.0, 1.8)
 const PINE_CANOPY_HEIGHT := Vector2(2.4, 4.4)
 const PINE_CANOPY_COLORS := [Color(0.15, 0.35, 0.18), Color(0.12, 0.3, 0.15), Color(0.18, 0.4, 0.2)]
 
+const GRASS_RADIUS := Vector2(0.05, 0.09)
+const GRASS_HEIGHT := Vector2(0.15, 0.35)
+const GRASS_COLORS := [Color(0.3, 0.55, 0.22), Color(0.35, 0.6, 0.25), Color(0.28, 0.5, 0.2)]
+
 const FLOWER_STEM_RADIUS := 0.03
 const FLOWER_STEM_HEIGHT := Vector2(0.22, 0.4)
 const FLOWER_STEM_COLOR := Color(0.25, 0.55, 0.2)

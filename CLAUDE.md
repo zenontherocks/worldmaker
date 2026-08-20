@@ -182,6 +182,20 @@ edit-able through `BuildModeController` and serializable through
 every reload would make "deleting" one through the build tools
 confusing rather than useful.
 
+Flowers and grass are grassland-only ground cover, scattered by the same
+`_candidate_position()`/biome-check pattern as trees but with their own
+attempt counts (`FLOWER_ATTEMPTS_PER_CHUNK`, `GRASS_ATTEMPTS_PER_CHUNK`)
+— grass in particular is built as a single bare `MeshInstance3D` with no
+wrapper node and no collision, deliberately the cheapest possible
+decoration so it can be scattered densely. Tree density stayed low
+(`TREE_ATTEMPTS_PER_CHUNK`) after real in-browser testing linked heavy
+per-chunk decoration+mesh work to a dropped WebGL context on movement;
+flower/grass density was raised back up afterward once the water mesh
+(see below) became a flat plane instead of a per-quad pass, freeing up
+most of the budget that made the original cut necessary — see that
+constant's own comment in `VegetationFactory.gd` for the reasoning and
+the fallback tuning order if it needs cutting again.
+
 **Water** (lakes and rivers) is one flat `PlaneMesh` per chunk at a fixed
 `TerrainNoise.WATER_LEVEL`, always present (not contoured to the carved
 terrain) — an earlier version tried to mask a mesh to only the

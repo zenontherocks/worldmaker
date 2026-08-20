@@ -18,16 +18,26 @@ class_name VegetationFactory
 const TreeArchetype = VegetationDefinitions.TreeArchetype
 const Biome = BiomeDefinitions.Biome
 
-## Cut hard from the original 5/12 after real in-browser testing showed
-## each newly-streamed chunk doing enough synchronous node/mesh-building
-## work (this plus TerrainChunk's water mesh) to be a likely cause of a
-## dropped WebGL context on movement -- StaticBody3D/CollisionShape3D/
+## TREE_ATTEMPTS_PER_CHUNK was cut hard (from an original 5) after real
+## in-browser testing showed each newly-streamed chunk doing enough
+## synchronous node/mesh-building work to be a likely cause of a dropped
+## WebGL context on movement -- StaticBody3D/CollisionShape3D/
 ## MeshInstance3D/Mesh construction per attempt adds up fast at 81
-## resident chunks. If still not enough, TerrainStreamer.
-## VIEW_DISTANCE_CHUNKS is the next lever, but squares the effect since
-## it multiplies every chunk's decorations, not just its own count.
+## resident chunks. Left low here since trees are still the most
+## expensive decoration per instance (collision shape + up to 2 meshes).
+## FLOWER_ATTEMPTS_PER_CHUNK and GRASS_ATTEMPTS_PER_CHUNK were raised
+## back up after user feedback wanted much more of both -- both are
+## cheap per instance (flowers: 3 plain nodes, no collision; grass: a
+## single MeshInstance3D, the cheapest possible decoration), and the
+## water mesh that was the other big cost driver is now a flat plane per
+## chunk instead of a per-quad SurfaceTool pass, buying back most of the
+## budget that made the original cut necessary. If a dropped context
+## reappears, cut these first; TerrainStreamer.VIEW_DISTANCE_CHUNKS is
+## the next lever, but squares the effect since it multiplies every
+## chunk's decorations, not just its own count.
 const TREE_ATTEMPTS_PER_CHUNK := 2
-const FLOWER_ATTEMPTS_PER_CHUNK := 4
+const FLOWER_ATTEMPTS_PER_CHUNK := 20
+const GRASS_ATTEMPTS_PER_CHUNK := 24
 
 ## Keeps decorations well clear of the spawn/tan-house build area --
 ## higher than a bare ">0" check so trees don't start appearing right at
@@ -57,6 +67,10 @@ static func scatter(chunk_coord: Vector2i, noise: TerrainNoise, chunk_size: floa
 		var flower := _try_flower(chunk_coord, chunk_size, noise, rng)
 		if flower:
 			nodes.append(flower)
+	for _i in range(GRASS_ATTEMPTS_PER_CHUNK):
+		var grass := _try_grass(chunk_coord, chunk_size, noise, rng)
+		if grass:
+			nodes.append(grass)
 	return nodes
 
 
@@ -87,6 +101,20 @@ static func _try_flower(
 	if biome != Biome.GRASSLAND:
 		return null
 	return _build_flower(candidate.local, rng)
+
+
+static func _try_grass(
+	chunk_coord: Vector2i, chunk_size: float, noise: TerrainNoise, rng: RandomNumberGenerator
+) -> Node3D:
+	var candidate := _candidate_position(chunk_coord, chunk_size, noise, rng)
+	if candidate.is_empty():
+		return null
+	var biome := BiomeDefinitions.dominant_biome(
+		noise.biome_noise_at(candidate.world_x, candidate.world_z), candidate.height
+	)
+	if biome != Biome.GRASSLAND:
+		return null
+	return _build_grass(candidate.local, rng)
 
 
 ## Empty Dictionary means "reject this attempt" -- keeps decorations out
@@ -173,6 +201,26 @@ static func _build_flower(local_pos: Vector3, rng: RandomNumberGenerator) -> Nod
 	_add_sphere(root, "Bloom", bloom_diameter, bloom_color, stem_height + bloom_diameter * 0.3)
 
 	return root
+
+
+## The cheapest possible decoration -- a single MeshInstance3D, no
+## wrapper Node3D and no collision, so scattering it densely (see
+## GRASS_ATTEMPTS_PER_CHUNK) costs as little as this can per instance.
+static func _build_grass(local_pos: Vector3, rng: RandomNumberGenerator) -> MeshInstance3D:
+	var radius := rng.randf_range(VegetationDefinitions.GRASS_RADIUS.x, VegetationDefinitions.GRASS_RADIUS.y)
+	var height := rng.randf_range(VegetationDefinitions.GRASS_HEIGHT.x, VegetationDefinitions.GRASS_HEIGHT.y)
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 0.0
+	mesh.bottom_radius = radius
+	mesh.height = height
+
+	var instance := MeshInstance3D.new()
+	instance.name = "Grass"
+	instance.mesh = mesh
+	instance.material_override = _material_for(_pick_color(VegetationDefinitions.GRASS_COLORS, rng))
+	instance.position = local_pos + Vector3(0, height * 0.5, 0)
+	instance.rotation.y = rng.randf_range(0.0, TAU)
+	return instance
 
 
 static func _add_cylinder(parent: Node3D, node_name: String, radius: float, height: float, color: Color, base_y: float) -> void:
