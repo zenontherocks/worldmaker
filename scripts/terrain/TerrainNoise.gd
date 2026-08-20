@@ -27,13 +27,23 @@ const WATER_LEVEL := -2.0
 ## that noise MAGNITUDE, not actual world-space distance -- real river
 ## width will vary along its length depending on how steep the noise
 ## field's local gradient is there (narrower where steep, wider where
-## shallow). This is a noise trick, not simulated hydrology. Frequency
-## sits between BIOME_NOISE_FREQUENCY and HEIGHT_NOISE_FREQUENCY: rivers
-## should meander across biomes over a shorter distance than a whole
-## biome region.
-const RIVER_NOISE_FREQUENCY := 0.008
-const RIVER_WIDTH_NOISE := 0.04
-const RIVER_DEPTH := 9.0
+## shallow). This is a noise trick, not simulated hydrology.
+##
+## Tuned down from an earlier pass (frequency 0.008, width 0.04, depth
+## 9.0) after user reports of falling into steep-walled pits and getting
+## stuck -- a low frequency relative to HEIGHT_NOISE_FREQUENCY produces a
+## whole crossing NETWORK of channels, not a few sparse rivers, and a
+## narrow/deep combination makes each one a near-vertical trap a jump
+## can't escape. Lower frequency means far fewer channels; a wider
+## falloff spreads the same depth change over more world-space distance
+## (gentler, walkable slopes instead of cliffs); a shallower depth means
+## a stuck player can jump out directly. Also means carving is now
+## usually shallow enough to sit above WATER_LEVEL except at genuinely
+## low ground -- rivers show as blue water more consistently, less often
+## as the "dry ravine crossing a hilltop" case described below.
+const RIVER_NOISE_FREQUENCY := 0.003
+const RIVER_WIDTH_NOISE := 0.09
+const RIVER_DEPTH := 4.0
 
 ## Player spawns at (0, 1, 0) (see Main.tscn's Player transform) and any
 ## hand-authored world JSON (e.g. a saved house build) assumes flat ground
