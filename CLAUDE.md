@@ -40,6 +40,13 @@ scripts/
 │   ├── PlaceableObject.gd     # metadata + to_dict() on every placed object
 │   ├── GhostPreview.gd        # translucent placement preview, visual-only
 │   └── BuildModeController.gd # raycast, tool cycling, dimension edit, placement, ALL snapping logic
+├── terrain/
+│   ├── BiomeDefinitions.gd      # data table: biome colors + noise thresholds + dominant_biome() (add a biome here)
+│   ├── TerrainNoise.gd          # single source of truth: world (x,z) -> height/normal/color, river carving
+│   ├── TerrainChunk.gd          # (chunk_coord, TerrainNoise) -> Mesh + HeightMapShape3D + water for one chunk
+│   ├── TerrainStreamer.gd       # loads/frees chunks around the player, see "Infinite terrain" below
+│   ├── VegetationDefinitions.gd # data table: tree archetypes + flower dimensions/colors (add an archetype here)
+│   └── VegetationFactory.gd     # (chunk_coord, TerrainNoise) -> scattered tree/flower nodes for one chunk
 └── ui/
     ├── UIRoot.gd          # builds PauseMenuUI + BuildHUD + Crosshair, no logic
     ├── PauseMenuUI.gd     # Esc menu -- see "Procedural UI pattern" below
@@ -48,7 +55,7 @@ scripts/
     └── Crosshair.gd       # decorative center dot, no logic
 
 scenes/
-├── Main.tscn   # Environment, SunLight, Ground, World (empty container GameManager fills), Player, UI
+├── Main.tscn   # Environment, SunLight, Terrain, World (empty container GameManager fills), Player, UI
 └── Player.tscn # CharacterBody3D > Camera3D > RayCast3D + BuildController > GhostPreview
 
 project.godot          # autoload order above; run/main_scene=Main.tscn; renderer=gl_compatibility
@@ -115,6 +122,106 @@ path (`BuildModeController._place_current()`) and world-load
 (`SaveLoadManager._spawn_object()`) call through it. If you're adding a
 third kind of "skin" (e.g. a procedural pattern), extend `build_material()`
 and `is_color_key()`-style discrimination there, not in either caller.
+
+### Infinite terrain (`TerrainStreamer.gd`, `TerrainNoise.gd`, `TerrainChunk.gd`)
+
+Replaced the old fixed 60x60 `Ground` plane, which had a hard edge you'd
+fall through forever past. `TerrainNoise.gd` is the **single source of
+truth** for "what does the terrain look like at this world (x, z)" —
+`height_at()`/`normal_at()`/`color_at()` are pure functions of world
+coordinates only, never chunk-local ones. That's *why* adjacent chunks
+never show seams or lighting cracks: two chunks sharing an edge call the
+same functions with the same world-space inputs and get bit-identical
+results, by construction, not by careful chunk-boundary bookkeeping.
+`TerrainChunk.build()` (mirrors `ShapeFactory.create_instance()`) reads
+those three functions once per vertex to build both the visual mesh and
+the `HeightMapShape3D` collision from the *same* height samples, so the
+walkable surface can't drift from the rendered one either.
+
+`TerrainStreamer.gd` (a `Node3D` under `Main`, wired via
+`set_player()` from `Main.gd`'s `_ready()` — see "Composition root"
+below) tracks the player's current chunk coordinate and keeps a
+square ring of chunks loaded within `VIEW_DISTANCE_CHUNKS`, freeing ones
+that fall outside `VIEW_DISTANCE_CHUNKS + UNLOAD_HYSTERESIS_CHUNKS` (the
+hysteresis margin stops load/unload thrashing right at the boundary).
+New chunks are generated a few at a time (`CHUNKS_GENERATED_PER_FRAME`)
+from a nearest-first queue rather than all at once, to avoid a hitch
+when crossing a chunk boundary; `_ready()` eagerly builds a small block
+around world origin synchronously first, since physics can tick before
+the first budgeted frame runs otherwise.
+
+Terrain is intentionally **not** part of the save/load system —
+`SaveLoadManager` only serializes `GameManager.world_root`'s children,
+and terrain chunks live outside it (sibling to `World`, where `Ground`
+used to sit), regenerated on demand from a fixed noise seed rather than
+persisted. A world JSON like a saved house build still works unmodified,
+because `TerrainNoise` hard-flattens height/color to a flat green plain
+within `FLATTEN_INNER_RADIUS` of world origin (blending into full hills
+by `FLATTEN_OUTER_RADIUS`) — the same assumption the player's spawn
+point and any origin-anchored build already relied on.
+
+**Vegetation** (`VegetationDefinitions.gd`, `VegetationFactory.gd`) is
+scattered inside `TerrainChunk.build()` itself, not as a separate pass —
+that's what gets it covered by `TerrainStreamer`'s existing per-frame
+budget for free, and freed automatically (as a descendant of the chunk's
+`StaticBody3D`) whenever a chunk unloads, with no lifecycle code of its
+own anywhere. `VegetationFactory.scatter()` seeds a
+`RandomNumberGenerator` purely from `(chunk_coord, TerrainNoise.
+NOISE_SEED)` — the same reproducibility guarantee `TerrainNoise` already
+gives height/color, so a chunk's trees/flowers don't reshuffle when it
+streams out and back in. Candidates are rejected below
+`FLATTEN_SPAWN_THRESHOLD` (keeps decorations out of the spawn/tan-house
+zone) and below `TerrainNoise.WATER_LEVEL` (keeps them out of lake/river
+beds), then matched to one of three tree archetypes by
+`BiomeDefinitions.dominant_biome()` — deliberately real shape variation
+(a cactus has no canopy at all; a pine's canopy is a cone, not a sphere),
+not just three colors of the same tree. Trees are **not**
+`PlaceableObject`: that class exists to make something delete/rotate/
+edit-able through `BuildModeController` and serializable through
+`SaveLoadManager`, and a decoration that regenerates from the seed on
+every reload would make "deleting" one through the build tools
+confusing rather than useful.
+
+Flowers and grass are grassland-only ground cover, scattered by the same
+`_candidate_position()`/biome-check pattern as trees but with their own
+attempt counts (`FLOWER_ATTEMPTS_PER_CHUNK`, `GRASS_ATTEMPTS_PER_CHUNK`)
+— grass in particular is built as a single bare `MeshInstance3D` with no
+wrapper node and no collision, deliberately the cheapest possible
+decoration so it can be scattered densely. Tree density stayed low
+(`TREE_ATTEMPTS_PER_CHUNK`) after real in-browser testing linked heavy
+per-chunk decoration+mesh work to a dropped WebGL context on movement;
+flower/grass density was raised back up afterward once the water mesh
+(see below) became a flat plane instead of a per-quad pass, freeing up
+most of the budget that made the original cut necessary — see that
+constant's own comment in `VegetationFactory.gd` for the reasoning and
+the fallback tuning order if it needs cutting again.
+
+**Water** (lakes and rivers) is one flat `PlaneMesh` per chunk at a fixed
+`TerrainNoise.WATER_LEVEL`, always present (not contoured to the carved
+terrain) — an earlier version tried to mask a mesh to only the
+actually-submerged quads, which looked like disconnected stitched-
+together patches wherever a river was narrower than a full grid cell.
+A flat plane is both simpler and correct: it's normally hidden entirely
+under the opaque terrain mesh above it, and shows through as one
+continuous surface wherever terrain actually dips below `WATER_LEVEL`.
+Lakes are just naturally low noise; rivers are `TerrainNoise`'s
+ridged-noise carving (`_river_carve_at()`, a third `FastNoiseLite`
+field, subtracted from raw height *before* the `flatten_factor` multiply
+so a river can never cut through the flat spawn zone) lowering terrain
+enough in a meandering path to dip below the same `WATER_LEVEL` — no
+separate river-specific rendering exists, the same flat plane picks it
+up automatically.
+
+**Worked example — "add a fourth biome":** add its base `Color` const
+(suffixed `_COLOR` — see that constant block's own comment for why) and
+extend `_base_biome_color()`'s threshold chain in `BiomeDefinitions.gd`
+— that file is the only place biome colors and their noise thresholds
+live, exactly like `ShapeDefinitions.DEFS` is the only place shape
+dimensions live. Also extend `dominant_biome()`'s branches and give the
+new biome a case in `VegetationDefinitions.archetype_for_biome()` (or
+let it fall through to `-1`, i.e. no vegetation there) — those two stay
+in sync with `_base_biome_color()` by hand, there's no single shared
+table driving all three yet.
 
 ### Procedural UI pattern (`PauseMenuUI.gd`, `CircleButton.gd`)
 
