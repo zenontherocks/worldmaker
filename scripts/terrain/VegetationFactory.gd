@@ -25,19 +25,22 @@ const Biome = BiomeDefinitions.Biome
 ## MeshInstance3D/Mesh construction per attempt adds up fast at 81
 ## resident chunks. Left low here since trees are still the most
 ## expensive decoration per instance (collision shape + up to 2 meshes).
-## FLOWER_ATTEMPTS_PER_CHUNK and GRASS_ATTEMPTS_PER_CHUNK were raised
-## back up after user feedback wanted much more of both -- both are
-## cheap per instance (flowers: 3 plain nodes, no collision; grass: a
-## single MeshInstance3D, the cheapest possible decoration), and the
-## water mesh that was the other big cost driver is now a flat plane per
-## chunk instead of a per-quad SurfaceTool pass, buying back most of the
-## budget that made the original cut necessary. If a dropped context
-## reappears, cut these first; TerrainStreamer.VIEW_DISTANCE_CHUNKS is
-## the next lever, but squares the effect since it multiplies every
-## chunk's decorations, not just its own count.
+##
+## FLOWER_ATTEMPTS_PER_CHUNK and GRASS_ATTEMPTS_PER_CHUNK were once raised
+## to 20/24 on the theory that the flat-plane water mesh (see
+## TerrainChunk.gd) had freed up enough budget to afford it. It hadn't --
+## a second dropped-context report came in at that setting (46 attempts/
+## chunk, all built synchronously inside TerrainChunk.build() alongside
+## the heightfield mesh/collision), well above the 17 attempts/chunk
+## (5 trees + 12 flowers) that caused the *first* report. Pulled back
+## down to comfortably under that original failure threshold. If a
+## dropped context reappears again, cut these further first;
+## TerrainStreamer.VIEW_DISTANCE_CHUNKS is the next lever, but squares
+## the effect since it multiplies every chunk's decorations, not just
+## its own count.
 const TREE_ATTEMPTS_PER_CHUNK := 2
-const FLOWER_ATTEMPTS_PER_CHUNK := 20
-const GRASS_ATTEMPTS_PER_CHUNK := 24
+const FLOWER_ATTEMPTS_PER_CHUNK := 6
+const GRASS_ATTEMPTS_PER_CHUNK := 6
 
 ## Keeps decorations well clear of the spawn/tan-house build area --
 ## higher than a bare ">0" check so trees don't start appearing right at
